@@ -1,19 +1,11 @@
-"""
-Vector store operations for RAG.
-
-Handles:
-- Storing offer embeddings
-- Similarity search
-- Vector database management (ChromaDB/FAISS)
-"""
-
 from __future__ import annotations
 
 from typing import List, Dict, Any, Tuple, Optional
 
 
 def _ensure_serializable_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Qdrant payload must be JSON-serializable; coerce a few common types."""
+   # Qdrant payload must be JSON-serializable; coerce a few common types
+
     out: Dict[str, Any] = {}
     for k, v in payload.items():
         if v is None:
@@ -60,9 +52,7 @@ class VectorStore:
         return self._client
         
     def create_collection(self, collection_name: str | None = None, vector_size: int | None = None):
-        """
-        Create a new collection in the vector store.
-        """
+
         from qdrant_client.http import models as qm  # type: ignore
 
         name = collection_name or self.collection_name
@@ -85,14 +75,7 @@ class VectorStore:
     
     def add_documents(self, documents: List[str], embeddings: List[List[float]], 
                      metadata: List[Dict[str, Any]]):
-        """
-        Add documents with embeddings to the vector store.
-        
-        Args:
-            documents: List of document texts
-            embeddings: List of embedding vectors
-            metadata: List of metadata dictionaries
-        """
+
         if not documents:
             return
         if not (len(documents) == len(embeddings) == len(metadata)):
@@ -102,7 +85,7 @@ class VectorStore:
             self._vector_size = len(embeddings[0])
         self.create_collection(vector_size=self._vector_size)
 
-        from qdrant_client.http import models as qm  # type: ignore
+        from qdrant_client.http import models as qm  
 
         points: List[qm.PointStruct] = []
         for idx, (doc, vec, meta) in enumerate(zip(documents, embeddings, metadata)):
@@ -121,16 +104,10 @@ class VectorStore:
     
     def similarity_search(self, query_embedding: List[float], 
                          top_k: int = 5) -> List[Tuple[Dict[str, Any], float]]:
-        """
-        Perform similarity search.
-        
-        Args:
-            query_embedding: Query embedding vector
-            top_k: Number of top results to return
-            
-        Returns:
-            List of (metadata, similarity_score) tuples
-        """
+   
+            # query_embedding: Query embedding vector
+            # top_k: Number of top results to return
+    
         if self._vector_size is None:
             self._vector_size = len(query_embedding)
         self.create_collection(vector_size=self._vector_size)

@@ -1,15 +1,3 @@
-"""Build Qdrant index from processed offers.
-
-Reads: data/processed/found_offers.json
-Writes: points into Qdrant collection.
-
-Configuration via env vars (recommended via .env):
-- QDRANT_URL
-- QDRANT_API_KEY (cloud only)
-- COLLECTION_NAME
-- EMBEDDING_MODEL (default BAAI/bge-m3)
-"""
-
 from __future__ import annotations
 
 import json

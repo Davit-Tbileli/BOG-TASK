@@ -47,8 +47,52 @@ class PromptTemplates:
         Returns:
             Formatted string of offers
         """
-        # Implementation will be added here
-        pass
+        if not offers:
+            return "(ვერ მოიძებნა შეთავაზებები)"
+
+        lines: list[str] = []
+        for i, offer in enumerate(offers, start=1):
+            meta = offer.get("metadata", {}) or {}
+
+            brand = meta.get("brand_name") or ""
+            title = meta.get("title") or ""
+            category = meta.get("category_desc") or ""
+            details_url = meta.get("details_url") or ""
+            start_date = meta.get("start_date") or ""
+            end_date = meta.get("end_date") or ""
+            cities = meta.get("cities") or ""
+            segment = meta.get("segment_type") or ""
+            product = meta.get("product_code") or ""
+
+            benefit_label = meta.get("benefit_label_ka") or ""
+            benefit_value = meta.get("benefit_value")
+            benefit_unit = meta.get("benefit_unit") or ""
+
+            benefit_str = benefit_label
+            if benefit_value is not None:
+                if benefit_unit:
+                    benefit_str = f"{benefit_label}: {benefit_value}{benefit_unit}".strip()
+                else:
+                    benefit_str = f"{benefit_label}: {benefit_value}".strip()
+
+            lines.append(
+                "\n".join(
+                    [
+                        f"#{i}",
+                        f"სარგებელი: {benefit_str}" if benefit_str else "",
+                        f"ბრენდი: {brand}" if brand else "",
+                        f"სათაური: {title}" if title else "",
+                        f"კატეგორია: {category}" if category else "",
+                        f"პერიოდი: {start_date} - {end_date}" if (start_date or end_date) else "",
+                        f"ქალაქები: {cities}" if cities else "",
+                        f"სეგმენტი: {segment}" if segment else "",
+                        f"პროდუქტი/ბარათი: {product}" if product else "",
+                        f"ბმული: {details_url}" if details_url else "",
+                    ]
+                ).strip()
+            )
+
+        return "\n\n".join([l for l in lines if l.strip()])
     
     @staticmethod
     def create_user_message(query: str, offers: list) -> str:
@@ -62,5 +106,7 @@ class PromptTemplates:
         Returns:
             Formatted message
         """
-        # Implementation will be added here
-        pass
+        return PromptTemplates.USER_QUERY_TEMPLATE.format(
+            query=query.strip(),
+            offers=PromptTemplates.format_offers(offers),
+        )

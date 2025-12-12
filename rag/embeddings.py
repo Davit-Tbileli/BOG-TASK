@@ -19,41 +19,24 @@ def _safe_str(v: Any) -> str:
 
 
 class EmbeddingGenerator:
-    """
-    Generate embeddings for offers data.
-    """
-    
+
     def __init__(self, model_name: str, normalize_embeddings: bool = True, device: str | None = None):
-        """
-        Initialize embedding generator.
-        
-        Args:
-            model_name: Name of the embedding model to use
-        """
+
         self.model_name = model_name
         self.normalize_embeddings = normalize_embeddings
 
-        # Lazy import to avoid import cost for unrelated commands.
+        # Lazy import 
         from sentence_transformers import SentenceTransformer  # type: ignore
 
         # For BGE-M3, SentenceTransformer works well.
-        # device: None lets the library auto-pick (cuda if available).
         self.model = SentenceTransformer(model_name, device=device)
         
     def generate_embeddings(self, texts: List[str]) -> List[List[float]]:
-        """
-        Generate embeddings for a list of texts.
-        
-        Args:
-            texts: List of text strings
-            
-        Returns:
-            List of embedding vectors
-        """
+     
         if not texts:
             return []
 
-        # SentenceTransformers can normalize embeddings; recommended for cosine search.
+        # SentenceTransformers can normalize embeddings !!! recommended for cosine search.
         embeddings = self.model.encode(
             texts,
             convert_to_numpy=True,
@@ -63,15 +46,7 @@ class EmbeddingGenerator:
         return embeddings.tolist()
     
     def preprocess_offer(self, offer: Dict[str, Any]) -> str:
-        """
-        Preprocess offer data into text for embedding.
-        
-        Args:
-            offer: Offer dictionary
-            
-        Returns:
-            Preprocessed text string
-        """
+
         # Dense, multilingual-friendly representation.
         # Keep Georgian text as-is; add small field labels to help the model.
         brand = _safe_str(offer.get("brand_name"))
@@ -102,5 +77,5 @@ class EmbeddingGenerator:
         return "\n".join([p for p in parts if p])
 
     def embedding_dimension(self) -> int:
-        """Return embedding dimensionality for the configured model."""
+
         return int(self.model.get_sentence_embedding_dimension())

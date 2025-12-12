@@ -8,7 +8,7 @@ Env vars:
 - EMBEDDING_MODEL (default BAAAI/bge-m3)
 
 
-SMOKE TEST ARIS RA
+----------- SMOKE TEST ARIS RA
 """
 
 from __future__ import annotations
