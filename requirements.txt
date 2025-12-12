@@ -1,21 +1,27 @@
 # Web Scraping
-playwright==1.41.0
+# playwright==1.41.0
 beautifulsoup4==4.12.3
-lxml==5.1.0
+# lxml==5.1.0
 
 # Data Processing
-pandas==2.2.0
-numpy==1.26.3
+pandas==2.2.3
+numpy==2.1.3
 
 # Vector Store & Embeddings
-chromadb==0.4.22
-sentence-transformers==2.3.1
-faiss-cpu==1.7.4
+# chromadb==0.4.22
+sentence-transformers==2.5.1
+transformers>=4.45.0
+torch>=2.1.0
+# faiss-cpu is optional (and often unavailable on Windows/Python 3.13 wheels)
+# faiss-cpu==1.7.4
+qdrant-client==1.9.2
 
 # LLM
 openai==1.10.0
-langchain==0.1.5
-langchain-openai==0.0.5
+# LangChain is optional; the pinned version here conflicts with numpy>=2 on Python 3.13.
+# Uncomment and pin a Python-3.13-compatible stack if/when needed.
+# langchain
+# langchain-openai
 
 # Configuration
 pyyaml==6.0.1

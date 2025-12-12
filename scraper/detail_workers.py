@@ -154,10 +154,10 @@ async def scrape_one_detail_page(page, href: str, selectors: Optional[DetailSele
             # Some pages might not have <main>; fall back to body.
             await page.locator("body").first.wait_for(state="attached", timeout=15000)
 
-        # Give the SPA a moment to render text.
+        # davelodot ro darenderdes
         await page.wait_for_timeout(900)
 
-        # Trigger lazy sections.
+        # lazys pontshi chascrollva kvemot ro daloaddes kvelaperi (es mgoni optional upro aris)
         for _ in range(3):
             try:
                 await page.mouse.wheel(0, 1200)

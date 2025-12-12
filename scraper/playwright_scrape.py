@@ -111,7 +111,7 @@ async def main() -> None:
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=headless)
 
-        # One-time bootstrap: accept cookies and determine pagination, then reuse storage state
+        # ertjeradi tema - cookieebis dadastureba da pagination-is naxva
         bootstrap_context = await browser.new_context()
         bootstrap_page = await bootstrap_context.new_page()
         await bootstrap_page.set_viewport_size({"width": 1280, "height": 720})
@@ -152,7 +152,7 @@ async def main() -> None:
         await bootstrap_context.storage_state(path=storage_state_path)
         await bootstrap_context.close()
 
-        # Distribute pages like: worker0 -> 1,1+N,1+2N... worker1 -> 2,2+N...
+        # workerebis gadanacileba - k,2k... k+1, 2(k+1)...
         concurrency = max(1, min(concurrency, total_pages))
         page_lists = [list(range(i + 1, total_pages + 1, concurrency)) for i in range(concurrency)]
         print(f"Starting {concurrency} workers")
@@ -163,7 +163,7 @@ async def main() -> None:
         ]
         worker_results = await asyncio.gather(*tasks)
 
-        # Merge results deterministically by page number
+        # resultebis megingi 
         results_by_page: dict[int, list[dict]] = {}
         for d in worker_results:
             results_by_page.update(d)
