@@ -1,0 +1,497 @@
+[
+  {
+    "label": "აბასთუმანი",
+    "value": 99,
+    "items_count": 5
+  },
+  {
+    "label": "აბაშა",
+    "value": 48,
+    "items_count": 8
+  },
+  {
+    "label": "აგარა",
+    "value": 92,
+    "items_count": 4
+  },
+  {
+    "label": "ადიგენი",
+    "value": 28,
+    "items_count": 5
+  },
+  {
+    "label": "ამბროლაური",
+    "value": 62,
+    "items_count": 10
+  },
+  {
+    "label": "ასპინძა",
+    "value": 29,
+    "items_count": 5
+  },
+  {
+    "label": "ახალქალაქი",
+    "value": 66,
+    "items_count": 10
+  },
+  {
+    "label": "ახალციხე",
+    "value": 71,
+    "items_count": 14
+  },
+  {
+    "label": "ახმეტა",
+    "value": 46,
+    "items_count": 8
+  },
+  {
+    "label": "ბათუმი",
+    "value": 38,
+    "items_count": 71
+  },
+  {
+    "label": "ბაკურიანი",
+    "value": 109,
+    "items_count": 16
+  },
+  {
+    "label": "ბაღდათი",
+    "value": 11,
+    "items_count": 11
+  },
+  {
+    "label": "ბეთანია",
+    "value": 124,
+    "items_count": 3
+  },
+  {
+    "label": "ბოლნისი",
+    "value": 67,
+    "items_count": 8
+  },
+  {
+    "label": "ბორჯომი",
+    "value": 49,
+    "items_count": 16
+  },
+  {
+    "label": "გარდაბანი",
+    "value": 31,
+    "items_count": 13
+  },
+  {
+    "label": "გონიო",
+    "value": 118,
+    "items_count": 4
+  },
+  {
+    "label": "გორი",
+    "value": 34,
+    "items_count": 30
+  },
+  {
+    "label": "გრიგოლეთი",
+    "value": 80,
+    "items_count": 2
+  },
+  {
+    "label": "გუდაური",
+    "value": 125,
+    "items_count": 10
+  },
+  {
+    "label": "გურჯაანი",
+    "value": 58,
+    "items_count": 15
+  },
+  {
+    "label": "დედოფლისწყარო",
+    "value": 16,
+    "items_count": 9
+  },
+  {
+    "label": "დიდგორი",
+    "value": 135,
+    "items_count": 5
+  },
+  {
+    "label": "დმანისი",
+    "value": 32,
+    "items_count": 4
+  },
+  {
+    "label": "დუშეთი",
+    "value": 61,
+    "items_count": 9
+  },
+  {
+    "label": "ვანი",
+    "value": 12,
+    "items_count": 10
+  },
+  {
+    "label": "ვარდისუბანი",
+    "value": 101,
+    "items_count": 2
+  },
+  {
+    "label": "ვაჩნაძიანი",
+    "value": 103,
+    "items_count": 2
+  },
+  {
+    "label": "ზესტაფონი",
+    "value": 56,
+    "items_count": 19
+  },
+  {
+    "label": "ზუგდიდი",
+    "value": 24,
+    "items_count": 27
+  },
+  {
+    "label": "თბილისი",
+    "value": 37,
+    "items_count": 201
+  },
+  {
+    "label": "თეთრიწყარო",
+    "value": 50,
+    "items_count": 8
+  },
+  {
+    "label": "თელავი",
+    "value": 59,
+    "items_count": 22
+  },
+  {
+    "label": "თერჯოლა",
+    "value": 72,
+    "items_count": 14
+  },
+  {
+    "label": "თიანეთი",
+    "value": 20,
+    "items_count": 7
+  },
+  {
+    "label": "კაზრეთი",
+    "value": 142,
+    "items_count": 2
+  },
+  {
+    "label": "კასპი",
+    "value": 69,
+    "items_count": 12
+  },
+  {
+    "label": "კაჭრეთი",
+    "value": 106,
+    "items_count": 4
+  },
+  {
+    "label": "კოჯორი",
+    "value": 90,
+    "items_count": 3
+  },
+  {
+    "label": "ლაგოდეხი",
+    "value": 17,
+    "items_count": 10
+  },
+  {
+    "label": "ლანჩხუთი",
+    "value": 8,
+    "items_count": 9
+  },
+  {
+    "label": "ლენტეხი",
+    "value": 22,
+    "items_count": 3
+  },
+  {
+    "label": "მარნეული",
+    "value": 68,
+    "items_count": 12
+  },
+  {
+    "label": "მარტვილი",
+    "value": 25,
+    "items_count": 10
+  },
+  {
+    "label": "მარტყოფი",
+    "value": 130,
+    "items_count": 4
+  },
+  {
+    "label": "მახინჯაური",
+    "value": 100,
+    "items_count": 4
+  },
+  {
+    "label": "მესტია",
+    "value": 64,
+    "items_count": 11
+  },
+  {
+    "label": "მისაქციელი",
+    "value": 140,
+    "items_count": 3
+  },
+  {
+    "label": "მუხრანი",
+    "value": 123,
+    "items_count": 3
+  },
+  {
+    "label": "მცხეთა",
+    "value": 47,
+    "items_count": 16
+  },
+  {
+    "label": "ნატახტარი",
+    "value": 84,
+    "items_count": 4
+  },
+  {
+    "label": "ნინოწმინდა",
+    "value": 30,
+    "items_count": 9
+  },
+  {
+    "label": "ოზურგეთი",
+    "value": 54,
+    "items_count": 11
+  },
+  {
+    "label": "ონი",
+    "value": 23,
+    "items_count": 8
+  },
+  {
+    "label": "ჟინვალი",
+    "value": 102,
+    "items_count": 1
+  },
+  {
+    "label": "რუსთავი",
+    "value": 39,
+    "items_count": 27
+  },
+  {
+    "label": "საგარეჯო",
+    "value": 18,
+    "items_count": 10
+  },
+  {
+    "label": "საგურამო",
+    "value": 128,
+    "items_count": 8
+  },
+  {
+    "label": "სამტრედია",
+    "value": 13,
+    "items_count": 13
+  },
+  {
+    "label": "სართიჭალა",
+    "value": 116,
+    "items_count": 3
+  },
+  {
+    "label": "საქართველო",
+    "value": 146,
+    "items_count": 21
+  },
+  {
+    "label": "საჩხერე",
+    "value": 57,
+    "items_count": 10
+  },
+  {
+    "label": "სენაკი",
+    "value": 26,
+    "items_count": 13
+  },
+  {
+    "label": "სიღნაღი",
+    "value": 73,
+    "items_count": 8
+  },
+  {
+    "label": "სურამი",
+    "value": 104,
+    "items_count": 6
+  },
+  {
+    "label": "ტაბახმელა",
+    "value": 82,
+    "items_count": 3
+  },
+  {
+    "label": "ტყიბული",
+    "value": 45,
+    "items_count": 9
+  },
+  {
+    "label": "ურეკი",
+    "value": 98,
+    "items_count": 4
+  },
+  {
+    "label": "ფასანაური",
+    "value": 81,
+    "items_count": 3
+  },
+  {
+    "label": "ფოთი",
+    "value": 43,
+    "items_count": 18
+  },
+  {
+    "label": "ქარელი",
+    "value": 35,
+    "items_count": 8
+  },
+  {
+    "label": "ქედა",
+    "value": 5,
+    "items_count": 9
+  },
+  {
+    "label": "ქობულეთი",
+    "value": 6,
+    "items_count": 12
+  },
+  {
+    "label": "ქუთაისი",
+    "value": 70,
+    "items_count": 46
+  },
+  {
+    "label": "ყაზბეგი",
+    "value": 21,
+    "items_count": 11
+  },
+  {
+    "label": "ყვარელი",
+    "value": 60,
+    "items_count": 12
+  },
+  {
+    "label": "შეკვეთილი",
+    "value": 117,
+    "items_count": 4
+  },
+  {
+    "label": "შუახევი",
+    "value": 44,
+    "items_count": 8
+  },
+  {
+    "label": "ჩაქვი",
+    "value": 93,
+    "items_count": 7
+  },
+  {
+    "label": "ჩოხატაური",
+    "value": 9,
+    "items_count": 8
+  },
+  {
+    "label": "ჩხოროწყუ",
+    "value": 74,
+    "items_count": 11
+  },
+  {
+    "label": "ცაგერი",
+    "value": 63,
+    "items_count": 4
+  },
+  {
+    "label": "წალენჯიხა",
+    "value": 65,
+    "items_count": 10
+  },
+  {
+    "label": "წალკა",
+    "value": 33,
+    "items_count": 9
+  },
+  {
+    "label": "წაღვერი",
+    "value": 91,
+    "items_count": 3
+  },
+  {
+    "label": "წეროვანი",
+    "value": 138,
+    "items_count": 4
+  },
+  {
+    "label": "წილკანი",
+    "value": 120,
+    "items_count": 3
+  },
+  {
+    "label": "წინანდალი",
+    "value": 89,
+    "items_count": 2
+  },
+  {
+    "label": "წნორი",
+    "value": 137,
+    "items_count": 7
+  },
+  {
+    "label": "წყალტუბო",
+    "value": 55,
+    "items_count": 12
+  },
+  {
+    "label": "წყნეთი",
+    "value": 139,
+    "items_count": 4
+  },
+  {
+    "label": "ჭიათურა",
+    "value": 10,
+    "items_count": 10
+  },
+  {
+    "label": "ხარაგაული",
+    "value": 14,
+    "items_count": 7
+  },
+  {
+    "label": "ხაშური",
+    "value": 36,
+    "items_count": 11
+  },
+  {
+    "label": "ხელვაჩაური",
+    "value": 53,
+    "items_count": 9
+  },
+  {
+    "label": "ხობი",
+    "value": 27,
+    "items_count": 8
+  },
+  {
+    "label": "ხონი",
+    "value": 15,
+    "items_count": 10
+  },
+  {
+    "label": "ხულო",
+    "value": 7,
+    "items_count": 8
+  },
+  {
+    "label": "ჯვარი",
+    "value": 95,
+    "items_count": 5
+  }
+]
