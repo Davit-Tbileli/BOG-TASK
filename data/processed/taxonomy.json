@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "BOG Offers Hub Taxonomy",
+  "version": "0.1.0",
+  "language": "ka",
+
+  "benefit_types": [
+    {
+      "id": "DISCOUNT_PERCENT",
+      "label_ka": "პროცენტული ფასდაკლება",
+      "description": "Example: 20% ფასდაკლება",
+      "unit": "%",
+      "value_kind": "PERCENT",
+      "examples": ["20% ფასდაკლება", "-15%"]
+    },
+    {
+      "id": "CASHBACK_PERCENT",
+      "label_ka": "ქეშბექი (პროცენტით)",
+      "description": "Example: 10% cashback",
+      "unit": "%",
+      "value_kind": "PERCENT",
+      "examples": ["10% ქეშბექი"]
+    },
+    {
+      "id": "POINTS_MULTIPLIER",
+      "label_ka": "ქულების გამამრავლებელი (X)",
+      "description": "Example: 5X MR ქულა",
+      "unit": "X",
+      "value_kind": "MULTIPLIER",
+      "examples": ["5X MR ქულა"]
+    },
+    {
+      "id": "FIXED_AMOUNT_GEL",
+      "label_ka": "ფიქსირებული სარგებელი (₾)",
+      "description": "Example: 50₾ ფასდაკლება / 30₾ ქეშბექი",
+      "unit": "GEL",
+      "value_kind": "MONEY",
+      "examples": ["50₾ ფასდაკლება", "30 ლარი ქეშბექი"]
+    },
+    {
+      "id": "SPECIAL_OFFER",
+      "label_ka": "სპეციალური შეთავაზება",
+      "description": "No explicit numeric benefit; marketing offer",
+      "unit": null,
+      "value_kind": "NONE",
+      "examples": ["სპეციალური შეთავაზება"]
+    }
+  ],
+
+  "brand_overrides": [
+    {
+      "brand_name": "",
+      "benefit_type_id": "",
+      "notes": "Optional: force a benefit type for a specific brand"
+    }
+  ],
+
+  "rules": [
+    {
+      "id": "R001",
+      "enabled": true,
+      "priority": 100,
+      "when": {
+        "benef_badge_in": ["%"],
+        "benef_name_in": ["DISCOUNT"],
+        "title_regex": "(?i)(\\b|^)\\s*(\\d{1,3})\\s*%"
+      },
+      "then": {
+        "benefit_type_id": "DISCOUNT_PERCENT",
+        "value_extract": {
+          "source": "title",
+          "regex": "(?i)(\\d{1,3})\\s*%",
+          "group": 1,
+          "cast": "int"
+        }
+      },
+      "tags": ["badge:%", "benef_name:DISCOUNT"],
+      "notes": "Template example: match percent discounts from title"
+    },
+    {
+      "id": "R002",
+      "enabled": true,
+      "priority": 90,
+      "when": {
+        "benef_badge_in": ["X"],
+        "benef_name_in": ["MR"],
+        "title_regex": "(?i)(\\b|^)\\s*(\\d{1,2})\\s*X"
+      },
+      "then": {
+        "benefit_type_id": "POINTS_MULTIPLIER",
+        "value_extract": {
+          "source": "title",
+          "regex": "(?i)(\\d{1,2})\\s*X",
+          "group": 1,
+          "cast": "int"
+        }
+      },
+      "tags": ["badge:X", "benef_name:MR"],
+      "notes": "Template example: match MR multipliers"
+    }
+  ],
+
+  "offer_annotations": [
+    {
+      "details_url": "https://bankofgeorgia.ge/ka/offers-hub/details/14851",
+      "offer_id": "14851",
+      "benefit_type_id": "DISCOUNT_PERCENT",
+      "value": 20,
+      "value_unit": "%",
+      "tags": ["manual"],
+      "notes": "Optional: explicit per-offer override if rules aren\"t enough"
+    }
+  ]
+}
