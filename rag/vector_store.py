@@ -1,11 +1,32 @@
+"""Vector store implementation using Qdrant.
+
+Handles:
+- Connection to Qdrant Cloud or local instance
+- Collection creation and management
+- Document storage with metadata
+- Similarity search for retrieval
+"""
+
 from __future__ import annotations
 
-from typing import List, Dict, Any, Tuple, Optional
+import logging
+from typing import Any, Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 
 def _ensure_serializable_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
-   # Qdrant payload must be JSON-serializable; coerce a few common types
-
+    """Ensure all payload values are JSON-serializable for Qdrant.
+    
+    Qdrant requires all payload values to be basic JSON types.
+    This coerces common Python types (dates, nested objects, etc.) to strings.
+    
+    Args:
+        payload: Dictionary of metadata to serialize.
+        
+    Returns:
+        A new dictionary with all values JSON-serializable.
+    """
     out: Dict[str, Any] = {}
     for k, v in payload.items():
         if v is None:
@@ -20,8 +41,29 @@ def _ensure_serializable_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 class VectorStore:
+    """Qdrant-based vector store for offer embeddings.
+    
+    Manages connection to Qdrant (Cloud or local), handles collection
+    creation, document upsert, and similarity search operations.
+    
+    Attributes:
+        config: Configuration dictionary for the vector store.
+        collection_name: Name of the Qdrant collection.
+        distance: Distance metric for similarity (COSINE, DOT, EUCLIDEAN).
+    """
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any]) -> None:
+        """Initialize the vector store.
+        
+        Args:
+            config: Configuration dictionary with keys:
+                - qdrant_url: URL to Qdrant instance (required)
+                - qdrant_api_key: API key for Qdrant Cloud (optional)
+                - collection_name: Name for the collection (default: 'bog_offers')
+                - qdrant_distance: Distance metric (default: 'COSINE')
+                - qdrant_timeout_seconds: Request timeout (default: 120)
+                - upsert_batch_size: Batch size for upserting (default: 64)
+        """
 
         self.config = config
         self.vector_store_type = config.get('vector_store', 'qdrant')
@@ -41,9 +83,19 @@ class VectorStore:
 
     @property
     def client(self):
+        """Lazy-initialize and return the Qdrant client.
+        
+        Returns:
+            QdrantClient instance connected to the configured URL.
+            
+        Raises:
+            ImportError: If qdrant-client is not installed.
+            ConnectionError: If unable to connect to Qdrant.
+        """
         if self._client is None:
             from qdrant_client import QdrantClient  # type: ignore
 
+            logger.info(f"Connecting to Qdrant at {self.qdrant_url}")
             self._client = QdrantClient(
                 url=self.qdrant_url,
                 api_key=self.qdrant_api_key,
@@ -51,7 +103,20 @@ class VectorStore:
             )
         return self._client
         
-    def create_collection(self, collection_name: str | None = None, vector_size: int | None = None):
+    def create_collection(
+        self, 
+        collection_name: Optional[str] = None, 
+        vector_size: Optional[int] = None
+    ) -> None:
+        """Create a Qdrant collection if it doesn't exist.
+        
+        Args:
+            collection_name: Name for the collection (uses default if None).
+            vector_size: Dimension of vectors (required on first call).
+            
+        Raises:
+            ValueError: If vector_size is never provided.
+        """
 
         from qdrant_client.http import models as qm  # type: ignore
 
@@ -59,22 +124,41 @@ class VectorStore:
         if vector_size is not None:
             self._vector_size = int(vector_size)
         if self._vector_size is None:
-            raise ValueError("vector_size must be provided at least once (e.g., from embedding model dimension).")
+            raise ValueError(
+                "vector_size must be provided at least once "
+                "(e.g., from embedding model dimension)."
+            )
 
         dist = getattr(qm.Distance, self.distance.upper(), qm.Distance.COSINE)
 
-        # Recreate=false behavior: if exists, we'll just keep it.
+        # Check if collection already exists
         collections = {c.name for c in self.client.get_collections().collections}
         if name in collections:
+            logger.debug(f"Collection '{name}' already exists, skipping creation")
             return
 
+        logger.info(f"Creating collection '{name}' with vector size {self._vector_size}")
         self.client.create_collection(
             collection_name=name,
             vectors_config=qm.VectorParams(size=self._vector_size, distance=dist),
         )
     
-    def add_documents(self, documents: List[str], embeddings: List[List[float]], 
-                     metadata: List[Dict[str, Any]]):
+    def add_documents(
+        self, 
+        documents: List[str], 
+        embeddings: List[List[float]], 
+        metadata: List[Dict[str, Any]]
+    ) -> None:
+        """Add documents with their embeddings and metadata to the collection.
+        
+        Args:
+            documents: List of document texts.
+            embeddings: List of embedding vectors.
+            metadata: List of metadata dictionaries for each document.
+            
+        Raises:
+            ValueError: If lengths of documents, embeddings, and metadata don't match.
+        """
 
         if not documents:
             return
@@ -96,17 +180,32 @@ class VectorStore:
 
         # Upsert in batches to avoid large request timeouts.
         batch_size = max(1, int(self.upsert_batch_size))
-        for start in range(0, len(points), batch_size):
+        total_batches = (len(points) + batch_size - 1) // batch_size
+        
+        for i, start in enumerate(range(0, len(points), batch_size)):
+            batch = points[start : start + batch_size]
+            logger.debug(f"Upserting batch {i + 1}/{total_batches} ({len(batch)} points)")
             self.client.upsert(
                 collection_name=self.collection_name,
-                points=points[start : start + batch_size],
+                points=batch,
             )
+        
+        logger.info(f"Successfully added {len(documents)} documents to '{self.collection_name}'")
     
-    def similarity_search(self, query_embedding: List[float], 
-                         top_k: int = 5) -> List[Tuple[Dict[str, Any], float]]:
-   
-            # query_embedding: Query embedding vector
-            # top_k: Number of top results to return
+    def similarity_search(
+        self, 
+        query_embedding: List[float], 
+        top_k: int = 5
+    ) -> List[Tuple[Dict[str, Any], float]]:
+        """Search for similar documents using vector similarity.
+        
+        Args:
+            query_embedding: The query embedding vector.
+            top_k: Number of top results to return.
+            
+        Returns:
+            List of (payload_dict, score) tuples sorted by similarity.
+        """
     
         if self._vector_size is None:
             self._vector_size = len(query_embedding)

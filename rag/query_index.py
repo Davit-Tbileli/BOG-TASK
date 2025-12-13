@@ -1,5 +1,14 @@
+"""Query the Qdrant vector index for testing.
+
+A smoke test script to verify the RAG pipeline is working correctly.
+
+Usage:
+    python -m rag.query_index "your query here"
+"""
+
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from typing import Any, Dict
@@ -10,12 +19,26 @@ from rag.embeddings import EmbeddingGenerator
 from rag.retriever import OfferRetriever
 from rag.vector_store import VectorStore
 
+logger = logging.getLogger(__name__)
+
 
 def main() -> int:
+    """Run a test query against the vector index.
+    
+    Returns:
+        Exit code (0 for success, 2 for missing query).
+    """
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+    
     load_dotenv()
 
     query = " ".join(sys.argv[1:]).strip()
     if not query:
+        logger.error("No query provided")
         print("Provide a query string.")
         return 2
 

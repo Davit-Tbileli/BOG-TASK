@@ -1,6 +1,18 @@
+"""Build the Qdrant vector index from processed offers.
+
+This is a one-time setup script that:
+1. Loads offers from data/processed/found_offers.json
+2. Generates embeddings using the configured model
+3. Creates/updates a Qdrant collection with the vectors
+
+Usage:
+    python -m rag.build_index
+"""
+
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, List
@@ -10,13 +22,34 @@ from dotenv import load_dotenv
 from rag.embeddings import EmbeddingGenerator
 from rag.vector_store import VectorStore
 
+logger = logging.getLogger(__name__)
+
 
 def _load_offers(path: Path) -> List[Dict[str, Any]]:
+    """Load offers from a JSON file.
+    
+    Args:
+        path: Path to the JSON file.
+        
+    Returns:
+        List of offer dictionaries.
+    """
     with path.open("r", encoding="utf-8") as f:
         return json.load(f)
 
 
 def main() -> int:
+    """Build the vector index from processed offers.
+    
+    Returns:
+        Exit code (0 for success, non-zero for error).
+    """
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+    
     load_dotenv()
 
     repo_root = Path(__file__).resolve().parents[1]
@@ -36,6 +69,7 @@ def main() -> int:
     }
 
     offers = _load_offers(offers_path)
+    logger.info(f"Loaded {len(offers)} offers from {offers_path}")
 
     embedder = EmbeddingGenerator(model_name=embedding_model, normalize_embeddings=True)
     store = VectorStore(config=config)
@@ -69,7 +103,7 @@ def main() -> int:
     store.create_collection(vector_size=embedder.embedding_dimension())
     store.add_documents(documents=documents, embeddings=embeddings, metadata=metadatas)
 
-    print(f"Indexed {len(documents)} offers into Qdrant collection '{store.collection_name}'.")
+    logger.info(f"Indexed {len(documents)} offers into Qdrant collection '{store.collection_name}'.")
     return 0
 
 

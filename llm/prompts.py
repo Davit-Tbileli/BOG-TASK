@@ -1,27 +1,26 @@
-"""
-System prompts and templates for LLM.
+"""System prompts and templates for the BOG chatbot LLM.
 
 Contains:
-- System prompts
-- Few-shot examples
-- Response templates
+- System prompts for LLM context
+- User query templates
+- Offer formatting utilities
 """
 
+from __future__ import annotations
+
 import os
+from typing import Any, Dict, List, Optional
 
 
 class PromptTemplates:
-    """
-    Manage prompt templates for the chatbot.
-    """
-    
+
     SYSTEM_PROMPT = """
     თქვენ ხართ Bank of Georgia-ს შეთავაზებების ასისტენტი. თქვენი ამოცანაა დაეხმაროთ 
     მომხმარებლებს იპოვონ მათთვის ყველაზე შესაფერისი შეთავაზებები.
 
         პასუხის სტილი:
         - თუ მომხმარებელი სვამს კონკრეტულ, ფაქტობრივ კითხვას ერთ კონკრეტულ შეთავაზებაზე/ივენთზე
-            (მაგ: „ვინ იმღერებს…?“, „როდის არის…?“, „სად არის…?“), უპასუხეთ პირდაპირ და გამოიყენეთ
+            (მაგ: „ვინ…?“, „როდის არის…?“, „სად არის…?“), უპასუხეთ პირდაპირ და გამოიყენეთ
             მხოლოდ ყველაზე რელევანტური შეთავაზება. ნუ ჩამოთვლით მრავალ შეთავაზებას, თუ მომხმარებელი
             თავად არ ითხოვს ალტერნატივებს.
         - თუ კითხვა არის შეთავაზებების მოძებნა/შერჩევა/რეკომენდაცია, მაშინ ჩამოთვალეთ 1-3 ყველაზე
@@ -39,6 +38,8 @@ class PromptTemplates:
     
     USER_QUERY_TEMPLATE = """
     მომხმარებლის მოთხოვნა: {query}
+
+    {followup_context}
     
     რელევანტური შეთავაზებები:
     {offers}
@@ -46,19 +47,13 @@ class PromptTemplates:
     ინსტრუქცია:
     - თუ ეს არის კონკრეტული ფაქტობრივი კითხვა, უპასუხე პირდაპირ (არ ჩამოთვალო მრავალი შეთავაზება).
     - თუ ეს არის რეკომენდაციის მოთხოვნა, შეარჩიე 1-3 საუკეთესო შეთავაზება.
+        - თუ მომხმარებელი მიუთითებს წინა შეტყობინებაზე (მაგ: "ეს", "ამის შესახებ", "კიდევ"),
+            პირველ რიგში გამოიყენე წინა კონტექსტი და ქვემოთ ჩამოთვლილი შეთავაზებები; არ გადახტე სხვა თემაზე.
     """
     
     @staticmethod
-    def format_offers(offers: list) -> str:
-        """
-        Format offers for inclusion in prompt.
-        
-        Args:
-            offers: List of offer dictionaries
-            
-        Returns:
-            Formatted string of offers
-        """
+    def format_offers(offers: List[Dict[str, Any]]) -> str:
+
         if not offers:
             return "(ვერ მოიძებნა შეთავაზებები)"
 
@@ -116,18 +111,23 @@ class PromptTemplates:
         return "\n\n".join([l for l in lines if l.strip()])
     
     @staticmethod
-    def create_user_message(query: str, offers: list) -> str:
-        """
-        Create user message with query and retrieved offers.
-        
-        Args:
-            query: User query
-            offers: Retrieved offers
-            
-        Returns:
-            Formatted message
-        """
+    def create_user_message(
+        query: str,
+        offers: List[Dict[str, Any]],
+        previous_query: Optional[str] = None,
+        previous_answer: Optional[str] = None,
+    ) -> str:
+        followup_context = ""
+        if (previous_query or "").strip() or (previous_answer or "").strip():
+            parts: list[str] = ["წინა კონტექსტი (თუ კითხვა არის გაგრძელება):"]
+            if (previous_query or "").strip():
+                parts.append(f"- წინა კითხვა: {previous_query}")
+            if (previous_answer or "").strip():
+                parts.append(f"- წინა პასუხი (შემოკლებული): {previous_answer}")
+            followup_context = "\n".join(parts)
+
         return PromptTemplates.USER_QUERY_TEMPLATE.format(
             query=query.strip(),
+            followup_context=followup_context.strip(),
             offers=PromptTemplates.format_offers(offers),
         )

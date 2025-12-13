@@ -1,18 +1,138 @@
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 
 from llm.prompts import PromptTemplates
 from rag.taxonomy import TaxonomyEngine
 
+logger = logging.getLogger(__name__)
+
+
+_FOLLOW_UP_CUES = (
+    # Georgian follow-up / deixis
+    "ეს",
+    "ეგ",
+    "იმ",
+    "ამ",
+    "ამაზე",
+    "იმაზე",
+    "ამის",
+    "იმის",
+    "ამის შესახებ",
+    "იმის შესახებ",
+    "წინაზე",
+    "წინა",
+    "ბოლოს",
+    "ბოლო",
+    "კიდევ",
+    "და კიდევ",
+    "დამატებით",
+    "უფრო დეტალურად",
+    "დეტალები",
+    "მეტად",
+    "მითხარი მეტი",
+    # English follow-up cues (just in case)
+    "that",
+    "this",
+    "those",
+    "it",
+    "what about",
+    "tell me more",
+    "more details",
+)
+
+
+def _truncate(text: str, max_chars: int) -> str:
+    t = (text or "").strip()
+    if max_chars <= 0:
+        return ""
+    if len(t) <= max_chars:
+        return t
+    return t[: max(0, max_chars - 1)].rstrip() + "…"
+
+
+def _looks_like_follow_up(query: str) -> bool:
+    q = (query or "").strip().lower()
+    if not q:
+        return False
+
+    # Short / ambiguous questions often refer to the previous turn
+    if len(q) <= 25:
+        return True
+
+    # If it contains follow-up cue words
+    for cue in _FOLLOW_UP_CUES:
+        if cue in q:
+            return True
+
+    # Questions that are mostly pronouns / generic
+    generic_starts = (
+        "და",
+        "კიდევ",
+        "მაშ",
+        "ანუ",
+        "ok",
+        "კი",
+        "არა",
+    )
+    if q.startswith(generic_starts):
+        return True
+
+    return False
+
+
+def _offer_key(offer: Dict[str, Any]) -> str:
+    meta = (offer or {}).get("metadata", {}) or {}
+    return str(meta.get("details_url") or meta.get("id") or "")
+
+
+def _merge_offers(preferred: List[Dict[str, Any]], fallback: List[Dict[str, Any]], limit: int) -> List[Dict[str, Any]]:
+    seen: set[str] = set()
+    out: List[Dict[str, Any]] = []
+    for src in (preferred, fallback):
+        for o in src or []:
+            k = _offer_key(o)
+            if not k:
+                # If no stable key, just append and hope it's unique enough
+                out.append(o)
+                continue
+            if k in seen:
+                continue
+            seen.add(k)
+            out.append(o)
+            if len(out) >= limit:
+                return out
+    return out[:limit]
 
 class BOGChatbot:
+    """Main chatbot class for BOG offers assistance.
+    
+    Integrates retrieval, taxonomy normalization, and LLM generation
+    to provide helpful responses about Bank of Georgia offers.
+    
+    Attributes:
+        retriever: OfferRetriever for fetching relevant offers.
+        config: Configuration dictionary for LLM and behavior settings.
+        taxonomy: TaxonomyEngine for normalizing benefit information.
+        conversation_history: List of past messages for context.
+    """
 
-    def __init__(self, retriever, config: Dict[str, Any]):
+    def __init__(self, retriever, config: Dict[str, Any]) -> None:
+        """Initialize the chatbot.
+        
+        Args:
+            retriever: OfferRetriever instance for fetching offers.
+            config: Configuration dictionary with keys:
+                - provider: LLM provider ('openai', 'gemini', 'none')
+                - model: Model name (e.g., 'gpt-4o-mini')
+                - temperature: Generation temperature (0-1)
+                - history_to_keep: Number of conversation turns to retain
+        """
 
         self.retriever = retriever
         self.config = config
@@ -21,11 +141,22 @@ class BOGChatbot:
         self.temperature = config.get('temperature', 0.7)
         self.conversation_history = []
 
+        # Keep last retrieval results so follow-ups like “ეს რა პირობებია?” stay on-topic.
+        self._last_results: List[Dict[str, Any]] = []
+        self._last_user_query: str = ""
+
         repo_root = Path(__file__).resolve().parents[1]
         self.taxonomy = TaxonomyEngine.from_repo_root(repo_root)
         
     def chat(self, user_message: str) -> str:
-
+        """Process a user message and generate a response.
+        
+        Args:
+            user_message: The user's input text.
+            
+        Returns:
+            A response string from the chatbot (LLM-generated or formatted offers).
+        """
         load_dotenv()
 
         provider = (self.config.get("provider") or os.getenv("LLM_PROVIDER") or "").strip().lower()
@@ -40,8 +171,24 @@ class BOGChatbot:
         if not query:
             return "მკითხე რაიმე." 
 
+        is_follow_up = _looks_like_follow_up(query) and bool(self._last_results)
+
         # 1) Retrieve
-        results = self.retriever.retrieve(query)
+        # For follow-ups, expand retrieval query slightly and fall back to last results if needed.
+        retrieval_query = query
+        if is_follow_up and self._last_user_query:
+            retrieval_query = f"{self._last_user_query}\nFollow-up: {query}".strip()
+
+        results = self.retriever.retrieve(retrieval_query)
+
+        if is_follow_up:
+            # If retrieval returns nothing (common for pronoun-y follow-ups), reuse last offers.
+            if not results:
+                results = list(self._last_results)
+            else:
+                # Merge so we don't unexpectedly switch away from the previous offer set.
+                max_keep = int(self.config.get("followup_offer_limit", 5))
+                results = _merge_offers(preferred=self._last_results, fallback=results, limit=max_keep)
 
         # 2) Taxonomy normalize (attach to metadata for prompt formatting)
         for r in results:
@@ -58,7 +205,21 @@ class BOGChatbot:
 
         # 3) Build prompt
         system_prompt = (self.config.get("system_prompt") or PromptTemplates.SYSTEM_PROMPT).strip()
-        user_prompt = PromptTemplates.create_user_message(query=query, offers=results)
+
+        prev_answer = ""
+        if is_follow_up and self.conversation_history:
+            # last assistant content if available
+            for m in reversed(self.conversation_history):
+                if m.get("role") == "assistant":
+                    prev_answer = str(m.get("content") or "")
+                    break
+
+        user_prompt = PromptTemplates.create_user_message(
+            query=query,
+            offers=results,
+            previous_query=self._last_user_query if is_follow_up else None,
+            previous_answer=_truncate(prev_answer, int(self.config.get("followup_prev_answer_max_chars", 900))),
+        )
         messages: List[Dict[str, str]] = [
             {"role": "system", "content": system_prompt},
         ]
@@ -104,23 +265,35 @@ class BOGChatbot:
         self.conversation_history.append({"role": "user", "content": query})
         self.conversation_history.append({"role": "assistant", "content": answer})
 
+        # Update follow-up context after producing a response.
+        self._last_user_query = query
+        self._last_results = list(results)
+
         return answer
     
-    def reset_conversation(self):
-        """
-        Reset conversation history.
+    def reset_conversation(self) -> None:
+        """Clear the conversation history.
+        
+        Use this to start a fresh conversation without context from previous exchanges.
         """
         self.conversation_history = []
+        self._last_results = []
+        self._last_user_query = ""
     
     def _call_llm(self, messages: List[Dict[str, str]], provider: str, model: str) -> str:
-        """
-        Make API call to LLM.
+        """Make an API call to the configured LLM provider.
         
         Args:
-            messages: List of message dictionaries
+            messages: List of message dictionaries with 'role' and 'content'.
+            provider: LLM provider name ('openai' or 'gemini').
+            model: Model name to use.
             
         Returns:
-            LLM response
+            Generated response text.
+            
+        Raises:
+            ValueError: If provider is not supported.
+            RuntimeError: If API key is missing or API call fails.
         """
         if provider == "openai":
             # Using OpenAI python SDK (v1.x)
