@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 _FOLLOW_UP_CUES = (
-    # Georgian follow-up / deixis
+    # Georgian follow-up
     "ეს",
     "ეგ",
     "იმ",
@@ -36,6 +36,9 @@ _FOLLOW_UP_CUES = (
     "დეტალები",
     "მეტად",
     "მითხარი მეტი",
+    "პირველი",
+    "მეორე",
+    "მესანმე",
     # English follow-up cues (just in case)
     "that",
     "this",
@@ -149,14 +152,7 @@ class BOGChatbot:
         self.taxonomy = TaxonomyEngine.from_repo_root(repo_root)
         
     def chat(self, user_message: str) -> str:
-        """Process a user message and generate a response.
-        
-        Args:
-            user_message: The user's input text.
-            
-        Returns:
-            A response string from the chatbot (LLM-generated or formatted offers).
-        """
+
         load_dotenv()
 
         provider = (self.config.get("provider") or os.getenv("LLM_PROVIDER") or "").strip().lower()

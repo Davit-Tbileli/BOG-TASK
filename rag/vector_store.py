@@ -1,12 +1,3 @@
-"""Vector store implementation using Qdrant.
-
-Handles:
-- Connection to Qdrant Cloud or local instance
-- Collection creation and management
-- Document storage with metadata
-- Similarity search for retrieval
-"""
-
 from __future__ import annotations
 
 import logging
@@ -16,17 +7,7 @@ logger = logging.getLogger(__name__)
 
 
 def _ensure_serializable_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Ensure all payload values are JSON-serializable for Qdrant.
-    
-    Qdrant requires all payload values to be basic JSON types.
-    This coerces common Python types (dates, nested objects, etc.) to strings.
-    
-    Args:
-        payload: Dictionary of metadata to serialize.
-        
-    Returns:
-        A new dictionary with all values JSON-serializable.
-    """
+
     out: Dict[str, Any] = {}
     for k, v in payload.items():
         if v is None:
@@ -41,16 +22,6 @@ def _ensure_serializable_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 class VectorStore:
-    """Qdrant-based vector store for offer embeddings.
-    
-    Manages connection to Qdrant (Cloud or local), handles collection
-    creation, document upsert, and similarity search operations.
-    
-    Attributes:
-        config: Configuration dictionary for the vector store.
-        collection_name: Name of the Qdrant collection.
-        distance: Distance metric for similarity (COSINE, DOT, EUCLIDEAN).
-    """
 
     def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize the vector store.
@@ -83,15 +54,7 @@ class VectorStore:
 
     @property
     def client(self):
-        """Lazy-initialize and return the Qdrant client.
-        
-        Returns:
-            QdrantClient instance connected to the configured URL.
-            
-        Raises:
-            ImportError: If qdrant-client is not installed.
-            ConnectionError: If unable to connect to Qdrant.
-        """
+
         if self._client is None:
             from qdrant_client import QdrantClient  # type: ignore
 
@@ -108,15 +71,6 @@ class VectorStore:
         collection_name: Optional[str] = None, 
         vector_size: Optional[int] = None
     ) -> None:
-        """Create a Qdrant collection if it doesn't exist.
-        
-        Args:
-            collection_name: Name for the collection (uses default if None).
-            vector_size: Dimension of vectors (required on first call).
-            
-        Raises:
-            ValueError: If vector_size is never provided.
-        """
 
         from qdrant_client.http import models as qm  # type: ignore
 

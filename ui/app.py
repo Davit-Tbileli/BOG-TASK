@@ -1,13 +1,3 @@
-"""Streamlit UI for the BOG Offers Chatbot.
-
-Provides a web-based chat interface for querying Bank of Georgia offers.
-
-Usage:
-    streamlit run ui/app.py
-    # or
-    python launch.py
-"""
-
 from __future__ import annotations
 
 import logging
@@ -20,11 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 def _repo_root() -> Path:
-    """Get the repository root directory.
-    
-    Returns:
-        Path to the repository root (parent of ui/).
-    """
+
     return Path(__file__).resolve().parents[1]
 
 
@@ -44,14 +30,7 @@ st.set_page_config(
 
 @st.cache_resource(show_spinner=False)
 def _get_bot():
-    """Initialize and cache the chatbot instance.
-    
-    Returns:
-        Configured BOGChatbot instance.
-        
-    Raises:
-        RuntimeError: If chatbot initialization fails.
-    """
+
     _ensure_repo_on_path()
 
     # Ensure .env is loaded from repo root
@@ -66,7 +45,7 @@ def _get_bot():
 
 
 def main() -> None:
-    """Main entry point for the Streamlit app."""
+
     st.title("BOG Offers Chatbot")
     st.caption("შენი შეთავაზებების ასისტენტი")
 
