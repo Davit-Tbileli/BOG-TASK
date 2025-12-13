@@ -93,3 +93,25 @@ Interactive:
 
 LLM-ის გარეშე (მხოლოდ Retrieval + Taxonomy):
 - `python -m llm.chatbot --no-llm "20% ფასდაკლება"`
+
+
+
+
+
+
+
+<h2>Config / .env პარამეტრები (მნიშვნელოვანი)</h2>
+
+<h3>Retrieval relevance tuning</h3>
+
+- <b>MIN_SIMILARITY_SCORE</b>: დაბალი score-ის “noise” ფილტრი (თუ random შედეგებია, აწიე ~`0.15-0.25`).
+- <b>LEXICAL_BOOST</b>: keyword overlap-ის ბუსტი rerank-ზე (თუ გინდა უფრო ზუსტი სახელები, აწიე ~`0.15-0.30`).
+- <b>MAX_RESULTS_FOR_PROMPT</b>: რამდენ შეთავაზებას “ხედავს” LLM (თუ ურევს შეთავაზებებს, დაწიე).
+- <b>MAX_FACTUAL_RESULTS</b>: ფაქტობრივ კითხვაზე (ვინ/როდის/სად/?) რამდენი შედეგი დარჩეს (რეკ: `1`).
+- <b>MIN_FACTUAL_OVERLAP</b>: ფაქტობრივ კითხვაზე მინ. overlap (თუ random ფაქტებია, აწიე ~`0.10-0.20`).
+
+<h3>LLM behavior</h3>
+
+- <b>LLM_TEMPERATURE</b>: “კრეატიულობა” (ფაქტებზე დაფუძნებულისთვის რეკ: `0.0-0.3`).
+- <b>HISTORY_TO_KEEP</b>: რამდენ ბოლო მესიჯს იტოვებს კონტექსტში (თუ წინა თემები ერევა, დაწიე).
+

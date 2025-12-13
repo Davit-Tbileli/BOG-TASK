@@ -1,6 +1,20 @@
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import streamlit as st
+
+
+def _repo_root() -> Path:
+    # ui/app.py -> repo root is one directory up.
+    return Path(__file__).resolve().parents[1]
+
+
+def _ensure_repo_on_path() -> None:
+    root = str(_repo_root())
+    if root not in sys.path:
+        sys.path.insert(0, root)
 
 
 st.set_page_config(
@@ -13,6 +27,16 @@ st.set_page_config(
 @st.cache_resource(show_spinner=False)
 def _get_bot():
     # Lazy import so Streamlit starts fast.
+    _ensure_repo_on_path()
+
+    # Ensure .env is loaded from repo root even if Streamlit CWD is ui/
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(_repo_root() / ".env")
+    except Exception:
+        pass
+
     from llm.chatbot import build_default_chatbot
 
     return build_default_chatbot()

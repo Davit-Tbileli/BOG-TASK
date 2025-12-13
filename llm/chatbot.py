@@ -1,12 +1,3 @@
-"""
-Chatbot implementation with LLM integration.
-
-Handles:
-- LLM API calls
-- Conversation management
-- Response generation
-"""
-
 from __future__ import annotations
 
 import os
@@ -20,18 +11,9 @@ from rag.taxonomy import TaxonomyEngine
 
 
 class BOGChatbot:
-    """
-    Chatbot for Bank of Georgia offers recommendations.
-    """
-    
+
     def __init__(self, retriever, config: Dict[str, Any]):
-        """
-        Initialize chatbot.
-        
-        Args:
-            retriever: OfferRetriever instance
-            config: Configuration dictionary
-        """
+
         self.retriever = retriever
         self.config = config
         self.provider = config.get("provider", "openai")
@@ -43,15 +25,7 @@ class BOGChatbot:
         self.taxonomy = TaxonomyEngine.from_repo_root(repo_root)
         
     def chat(self, user_message: str) -> str:
-        """
-        Process user message and generate response.
-        
-        Args:
-            user_message: User's input message
-            
-        Returns:
-            Bot's response
-        """
+
         load_dotenv()
 
         provider = (self.config.get("provider") or os.getenv("LLM_PROVIDER") or "").strip().lower()
@@ -64,7 +38,7 @@ class BOGChatbot:
 
         query = (user_message or "").strip()
         if not query:
-            return "გთხოვთ დაწერეთ შეკითხვა." 
+            return "მკითხე რაიმე." 
 
         # 1) Retrieve
         results = self.retriever.retrieve(query)
@@ -270,6 +244,13 @@ def build_default_chatbot() -> BOGChatbot:
     embedding_model = (os.getenv("EMBEDDING_MODEL") or "BAAI/bge-m3").strip()
     top_k = int((os.getenv("TOP_K") or "5").strip())
 
+    # Relevance tuning (optional)
+    min_similarity_score = float((os.getenv("MIN_SIMILARITY_SCORE") or "0.0").strip())
+    lexical_boost = float((os.getenv("LEXICAL_BOOST") or "0.15").strip())
+    max_results_for_prompt = int((os.getenv("MAX_RESULTS_FOR_PROMPT") or str(top_k)).strip())
+    max_factual_results = int((os.getenv("MAX_FACTUAL_RESULTS") or "1").strip())
+    min_factual_overlap = float((os.getenv("MIN_FACTUAL_OVERLAP") or "0.10").strip())
+
     vector_store = VectorStore(
         {
             "vector_store": "qdrant",
@@ -288,7 +269,14 @@ def build_default_chatbot() -> BOGChatbot:
     retriever = OfferRetriever(
         embedding_generator=embedding_generator,
         vector_store=vector_store,
-        config={"top_k_results": top_k},
+        config={
+            "top_k_results": top_k,
+            "min_similarity_score": min_similarity_score,
+            "lexical_boost": lexical_boost,
+            "max_results_for_prompt": max_results_for_prompt,
+            "max_factual_results": max_factual_results,
+            "min_factual_overlap": min_factual_overlap,
+        },
     )
 
     chatbot_config: Dict[str, Any] = {

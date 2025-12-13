@@ -7,6 +7,8 @@ Contains:
 - Response templates
 """
 
+import os
+
 
 class PromptTemplates:
     """
@@ -16,6 +18,15 @@ class PromptTemplates:
     SYSTEM_PROMPT = """
     თქვენ ხართ Bank of Georgia-ს შეთავაზებების ასისტენტი. თქვენი ამოცანაა დაეხმაროთ 
     მომხმარებლებს იპოვონ მათთვის ყველაზე შესაფერისი შეთავაზებები.
+
+        პასუხის სტილი:
+        - თუ მომხმარებელი სვამს კონკრეტულ, ფაქტობრივ კითხვას ერთ კონკრეტულ შეთავაზებაზე/ივენთზე
+            (მაგ: „ვინ იმღერებს…?“, „როდის არის…?“, „სად არის…?“), უპასუხეთ პირდაპირ და გამოიყენეთ
+            მხოლოდ ყველაზე რელევანტური შეთავაზება. ნუ ჩამოთვლით მრავალ შეთავაზებას, თუ მომხმარებელი
+            თავად არ ითხოვს ალტერნატივებს.
+        - თუ კითხვა არის შეთავაზებების მოძებნა/შერჩევა/რეკომენდაცია, მაშინ ჩამოთვალეთ 1-3 ყველაზე
+            შესაბამისი ვარიანტი და მოკლედ ახსენით რატომ.
+        - თუ მოცემულ ტექსტში პასუხი არ ჩანს, თქვით რა ინფორმაცია აკლია და მიუთითეთ ბმული.
     
     როდესაც მომხმარებელი აღწერს თავის საჭიროებას:
     1. ყურადღებით გაანალიზეთ რა სჭირდება მათ
@@ -32,8 +43,9 @@ class PromptTemplates:
     რელევანტური შეთავაზებები:
     {offers}
     
-    გთხოვთ შესთავაზოთ პერსონალიზებული რეკომენდაციები და ახსენით რატომ არის 
-    თითოეული შეთავაზება შესაფერისი ამ მომხმარებლისთვის.
+    ინსტრუქცია:
+    - თუ ეს არის კონკრეტული ფაქტობრივი კითხვა, უპასუხე პირდაპირ (არ ჩამოთვალო მრავალი შეთავაზება).
+    - თუ ეს არის რეკომენდაციის მოთხოვნა, შეარჩიე 1-3 საუკეთესო შეთავაზება.
     """
     
     @staticmethod
@@ -64,6 +76,14 @@ class PromptTemplates:
             segment = meta.get("segment_type") or ""
             product = meta.get("product_code") or ""
 
+            description = meta.get("description") or ""
+            try:
+                max_desc_chars = int(os.getenv("OFFER_DESC_MAX_CHARS", "2000"))
+            except Exception:
+                max_desc_chars = 2000
+            if max_desc_chars >= 0 and isinstance(description, str) and len(description) > max_desc_chars:
+                description = description[:max_desc_chars].rstrip() + "…"
+
             benefit_label = meta.get("benefit_label_ka") or ""
             benefit_value = meta.get("benefit_value")
             benefit_unit = meta.get("benefit_unit") or ""
@@ -87,6 +107,7 @@ class PromptTemplates:
                         f"ქალაქები: {cities}" if cities else "",
                         f"სეგმენტი: {segment}" if segment else "",
                         f"პროდუქტი/ბარათი: {product}" if product else "",
+                        f"აღწერა: {description}" if description else "",
                         f"ბმული: {details_url}" if details_url else "",
                     ]
                 ).strip()

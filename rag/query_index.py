@@ -1,16 +1,3 @@
-"""Query the Qdrant index from the command line.
-
-Usage (example):
-    python -m rag.query_index "20% ფასდაკლება"
-
-Env vars:
-- QDRANT_URL, QDRANT_API_KEY, COLLECTION_NAME
-- EMBEDDING_MODEL (default BAAAI/bge-m3)
-
-
------------ SMOKE TEST ARIS RA
-"""
-
 from __future__ import annotations
 
 import os
