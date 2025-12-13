@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 import os
 import re
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +136,13 @@ class OfferRetriever:
         self.max_factual_results = int(config.get("max_factual_results", 1))
         self.min_factual_overlap = float(config.get("min_factual_overlap", 0.10))
         
-    def retrieve(self, query: str) -> List[Dict[str, Any]]:
+    def retrieve(
+        self,
+        query: str,
+        top_k: Optional[int] = None,
+        limit: Optional[int] = None,
+        payload_filter: Optional[Dict[str, Any]] = None,
+    ) -> List[Dict[str, Any]]:
         """Retrieve relevant offers for a query.
         
         Args:
@@ -151,7 +157,9 @@ class OfferRetriever:
 
         logger.debug(f"Retrieving offers for query: {query[:100]}...")
         query_vec = self.embedding_generator.generate_embeddings([query.strip()])[0]
-        results = self.vector_store.similarity_search(query_vec, top_k=self.top_k)
+
+        k = self.top_k if top_k is None else max(1, int(top_k))
+        results = self.vector_store.similarity_search(query_vec, top_k=k, payload_filter=payload_filter)
 
         offers: List[Dict[str, Any]] = []
         for payload, score in results:
@@ -165,12 +173,14 @@ class OfferRetriever:
             )
 
         logger.debug(f"Retrieved {len(offers)} initial results")
-        return self.rerank_results(query=query, results=offers)
+        reranked = self.rerank_results(query=query, results=offers, limit_override=limit)
+        return reranked
     
     def rerank_results(
         self, 
         query: str, 
-        results: List[Dict[str, Any]]
+        results: List[Dict[str, Any]],
+        limit_override: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """Rerank results using lexical overlap and query type detection.
         
@@ -227,5 +237,8 @@ class OfferRetriever:
         limit = self.max_results_for_prompt
         if is_fact:
             limit = max(1, self.max_factual_results)
+
+        if limit_override is not None and not is_fact:
+            limit = max(1, int(limit_override))
 
         return reranked[: max(1, int(limit))]

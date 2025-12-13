@@ -40,6 +40,8 @@ class PromptTemplates:
     მომხმარებლის მოთხოვნა: {query}
 
     {followup_context}
+
+    {count_context}
     
     რელევანტური შეთავაზებები:
     {offers}
@@ -49,6 +51,10 @@ class PromptTemplates:
     - თუ ეს არის რეკომენდაციის მოთხოვნა, შეარჩიე 1-3 საუკეთესო შეთავაზება.
         - თუ მომხმარებელი მიუთითებს წინა შეტყობინებაზე (მაგ: "ეს", "ამის შესახებ", "კიდევ"),
             პირველ რიგში გამოიყენე წინა კონტექსტი და ქვემოთ ჩამოთვლილი შეთავაზებები; არ გადახტე სხვა თემაზე.
+
+    - თუ მომხმარებელი ითხოვს ზუსტად N შეთავაზებას/ვარიანტს:
+        - დაასახელე მაქსიმუმ N, მხოლოდ ქვემოთ ჩამოთვლილი შეთავაზებებიდან.
+        - თუ ნაკლებია ხელმისაწვდომი, აუცილებლად თქვი: "მხოლოდ X იყო ხელმისაწვდომი".
     """
     
     @staticmethod
@@ -116,6 +122,12 @@ class PromptTemplates:
         offers: List[Dict[str, Any]],
         previous_query: Optional[str] = None,
         previous_answer: Optional[str] = None,
+        requested_n: Optional[int] = None,
+        available_n: Optional[int] = None,
+        carried_city: Optional[str] = None,
+        carried_category: Optional[str] = None,
+        carried_benefit: Optional[str] = None,
+        carried_topic: Optional[str] = None,
     ) -> str:
         followup_context = ""
         if (previous_query or "").strip() or (previous_answer or "").strip():
@@ -126,8 +138,41 @@ class PromptTemplates:
                 parts.append(f"- წინა პასუხი (შემოკლებული): {previous_answer}")
             followup_context = "\n".join(parts)
 
+        count_context = ""
+        if requested_n is not None:
+            n_avail = len(offers) if available_n is None else int(available_n)
+            extras: list[str] = []
+            if (carried_city or "").strip():
+                extras.append(f"ქალაქი: {carried_city}")
+            if (carried_category or "").strip():
+                extras.append(f"კატეგორია: {carried_category}")
+            if (carried_benefit or "").strip():
+                extras.append(f"სარგებელი: {carried_benefit}")
+            if (carried_topic or "").strip():
+                extras.append(f"თემა: {carried_topic}")
+            extra_note = f" (კონტექსტი: {', '.join(extras)})" if extras else ""
+            count_context = (
+                f"მომხმარებელმა ითხოვა {requested_n} შეთავაზება. მოცემულია {n_avail} შეთავაზება{extra_note}. "
+                "თუ {n_avail} < {requested_n}, თქვი რომ მხოლოდ {n_avail} იყო ხელმისაწვდომი."
+            )
+            # Keep braces literal out of the final prompt (no further formatting needed)
+            count_context = count_context.replace("{n_avail}", str(n_avail)).replace("{requested_n}", str(requested_n))
+        else:
+            extras: list[str] = []
+            if (carried_city or "").strip():
+                extras.append(f"ქალაქი: {carried_city}")
+            if (carried_category or "").strip():
+                extras.append(f"კატეგორია: {carried_category}")
+            if (carried_benefit or "").strip():
+                extras.append(f"სარგებელი: {carried_benefit}")
+            if (carried_topic or "").strip():
+                extras.append(f"თემა: {carried_topic}")
+            if extras:
+                count_context = "კონტექსტი წინა შეტყობინებებიდან: " + ", ".join(extras)
+
         return PromptTemplates.USER_QUERY_TEMPLATE.format(
             query=query.strip(),
             followup_context=followup_context.strip(),
+            count_context=count_context.strip(),
             offers=PromptTemplates.format_offers(offers),
         )

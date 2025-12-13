@@ -1,14 +1,3 @@
-"""Build the Qdrant vector index from processed offers.
-
-This is a one-time setup script that:
-1. Loads offers from data/processed/found_offers.json
-2. Generates embeddings using the configured model
-3. Creates/updates a Qdrant collection with the vectors
-
-Usage:
-    python -m rag.build_index
-"""
-
 from __future__ import annotations
 
 import json
@@ -26,24 +15,13 @@ logger = logging.getLogger(__name__)
 
 
 def _load_offers(path: Path) -> List[Dict[str, Any]]:
-    """Load offers from a JSON file.
-    
-    Args:
-        path: Path to the JSON file.
-        
-    Returns:
-        List of offer dictionaries.
-    """
+
     with path.open("r", encoding="utf-8") as f:
         return json.load(f)
 
 
 def main() -> int:
-    """Build the vector index from processed offers.
-    
-    Returns:
-        Exit code (0 for success, non-zero for error).
-    """
+
     # Configure logging
     logging.basicConfig(
         level=logging.INFO,
@@ -101,6 +79,8 @@ def main() -> int:
 
     # Create collection with correct size (important)
     store.create_collection(vector_size=embedder.embedding_dimension())
+    # Ensure payload indexes needed for filtering (category_desc, cities, etc.)
+    store.ensure_payload_indexes()
     store.add_documents(documents=documents, embeddings=embeddings, metadata=metadatas)
 
     logger.info(f"Indexed {len(documents)} offers into Qdrant collection '{store.collection_name}'.")

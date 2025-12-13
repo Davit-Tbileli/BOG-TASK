@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +89,8 @@ class VectorStore:
         collections = {c.name for c in self.client.get_collections().collections}
         if name in collections:
             logger.debug(f"Collection '{name}' already exists, skipping creation")
+            # Still ensure payload indexes exist (required for filtered search).
+            self.ensure_payload_indexes(collection_name=name)
             return
 
         logger.info(f"Creating collection '{name}' with vector size {self._vector_size}")
@@ -96,6 +98,42 @@ class VectorStore:
             collection_name=name,
             vectors_config=qm.VectorParams(size=self._vector_size, distance=dist),
         )
+
+        # Create payload indexes used by filters (category/city/benefit/etc.).
+        self.ensure_payload_indexes(collection_name=name)
+
+    def ensure_payload_indexes(self, collection_name: Optional[str] = None, fields: Optional[Iterable[str]] = None) -> None:
+        """Create Qdrant payload indexes needed for filtering.
+
+        Qdrant requires payload indexes for many filter operations on large collections.
+        This method is safe to call repeatedly.
+        """
+
+        from qdrant_client.http import models as qm  # type: ignore
+
+        name = collection_name or self.collection_name
+        default_fields = [
+            "category_desc",
+            "brand_name",
+            "segment_type",
+            "product_code",
+            "benef_name",
+            "benef_badge",
+            "cities",
+            "details_url",
+        ]
+        target_fields = list(fields) if fields is not None else default_fields
+
+        for field in target_fields:
+            try:
+                self.client.create_payload_index(
+                    collection_name=name,
+                    field_name=field,
+                    field_schema=qm.PayloadSchemaType.KEYWORD,
+                )
+            except Exception:
+                # Index may already exist, or the server may not support the call; ignore.
+                continue
     
     def add_documents(
         self, 
@@ -146,10 +184,33 @@ class VectorStore:
         
         logger.info(f"Successfully added {len(documents)} documents to '{self.collection_name}'")
     
+    def _build_filter(self, payload_filter: Dict[str, Any]):
+        """Build a Qdrant Filter from a simple equality payload_filter dict."""
+
+        from qdrant_client.http import models as qm  # type: ignore
+
+        must: List[qm.FieldCondition] = []
+        for key, value in (payload_filter or {}).items():
+            if value is None:
+                continue
+            must.append(qm.FieldCondition(key=str(key), match=qm.MatchValue(value=value)))
+
+        if not must:
+            return None
+        return qm.Filter(must=must)
+
+    def count(self, payload_filter: Optional[Dict[str, Any]] = None) -> int:
+        """Count points matching a payload filter."""
+
+        flt = self._build_filter(payload_filter or {})
+        res = self.client.count(collection_name=self.collection_name, count_filter=flt, exact=True)
+        return int(getattr(res, "count", 0) or 0)
+
     def similarity_search(
-        self, 
-        query_embedding: List[float], 
-        top_k: int = 5
+        self,
+        query_embedding: List[float],
+        top_k: int = 5,
+        payload_filter: Optional[Dict[str, Any]] = None,
     ) -> List[Tuple[Dict[str, Any], float]]:
         """Search for similar documents using vector similarity.
         
@@ -165,11 +226,14 @@ class VectorStore:
             self._vector_size = len(query_embedding)
         self.create_collection(vector_size=self._vector_size)
 
+        flt = self._build_filter(payload_filter or {})
+
         hits = self.client.search(
             collection_name=self.collection_name,
             query_vector=query_embedding,
             limit=top_k,
             with_payload=True,
+            query_filter=flt,
         )
 
         out: List[Tuple[Dict[str, Any], float]] = []

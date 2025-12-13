@@ -115,3 +115,16 @@ LLM-ის გარეშე (მხოლოდ Retrieval + Taxonomy):
 - <b>LLM_TEMPERATURE</b>: “კრეატიულობა” (ფაქტებზე დაფუძნებულისთვის რეკ: `0.0-0.3`).
 - <b>HISTORY_TO_KEEP</b>: რამდენ ბოლო მესიჯს იტოვებს კონტექსტში (თუ წინა თემები ერევა, დაწიე).
 
+<h3>Follow-up / context tuning</h3>
+
+- <b>FOLLOWUP_OFFER_LIMIT</b>: follow-up-ზე რამდენ ძველ შეთავაზებას ინარჩუნებს/აერთიანებს (რომ არ გადახტეს სხვა თემაზე).
+- <b>FOLLOWUP_PREV_ANSWER_MAX_CHARS</b>: რამდენი სიმბოლო ჩაიდება წინა პასუხიდან prompt-ში (დაბალი = იაფი/სტაბილური).
+- <b>CONTEXT_TOPIC_KEYWORDS_LIMIT</b>: რამდენ "თემის" keyword-ს შეინახავს (მაგ: food/spa).
+- <b>CATEGORY_BROWSE_DEFAULT_N</b>: თუ მომხმარებელი უბრალოდ კატეგორიას წერს (მაგ: "გართობა და კულტურა"), რამდენი შეთავაზება აჩვენოს default-ად.
+
+<h3>Category filtering (Qdrant payload indexes)</h3>
+
+კატეგორიით ძებნა იყენებს Qdrant payload filter-ს (`category_desc`). ამისთვის Qdrant-ში საჭიროა payload index.
+თუ მიიღე შეცდომა типа "Index required but not found", გაუშვი:
+- `python -m rag.ensure_payload_indexes`
+
