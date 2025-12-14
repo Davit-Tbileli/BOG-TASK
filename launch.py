@@ -1,12 +1,3 @@
-"""One-command launcher for the Streamlit UI.
-
-Usage:
-    python launch.py
-
-This runs Streamlit using the same Python interpreter you used to execute this file
-(so it works correctly inside .venv).
-"""
-
 from __future__ import annotations
 
 import subprocess
