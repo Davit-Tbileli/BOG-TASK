@@ -42,6 +42,31 @@ _FOLLOW_UP_CUES = (
 )
 
 
+_DATE_QUESTION_CUES = (
+    # Georgian
+    "როდემდე",
+    "სადამდე",
+    "ვადამდე",
+    "როდიდან",
+    "საიდან",
+    "პერიოდი",
+    "თარიღ",
+    "დაწყება",
+    "დასრულება",
+    "მოქმედებს",
+    # English
+    "until",
+    "till",
+    "valid",
+    "expires",
+    "expiration",
+    "end date",
+    "start date",
+    "from when",
+    "when does",
+)
+
+
 def _truncate(text: str, max_chars: int) -> str:
     t = (text or "").strip()
     if max_chars <= 0:
@@ -86,6 +111,46 @@ def _looks_like_follow_up(query: str, previous_category: str = "", category_labe
     
     # NOT a follow-up - treat as independent query
     return False
+
+
+def _is_date_question(query: str) -> bool:
+    q = (query or "").strip().lower()
+    if not q:
+        return False
+    return any(cue in q for cue in _DATE_QUESTION_CUES)
+
+
+def _format_offer_period_answer(offer: Dict[str, Any]) -> str:
+    meta = (offer or {}).get("metadata", {}) or {}
+    start_date = str(meta.get("start_date") or "").strip()
+    end_date = str(meta.get("end_date") or "").strip()
+    details_url = str(meta.get("details_url") or "").strip()
+
+    brand = str(meta.get("brand_name") or "").strip()
+    title = str(meta.get("title") or "").strip()
+
+    label = ""
+    if brand and title:
+        label = f"{brand} — {title}"
+    elif title:
+        label = title
+    elif brand:
+        label = brand
+
+    if start_date or end_date:
+        # Always return both start/end if we have them.
+        period = f"{start_date} - {end_date}".strip(" -")
+        head = f"პერიოდი: {period}" if period else ""
+        if label:
+            head = f"{label}\n{head}" if head else label
+        if details_url:
+            head = f"{head}\nბმული: {details_url}" if head else f"ბმული: {details_url}"
+        return head.strip()
+
+    # No dates available in data.
+    if details_url:
+        return f"ამ შეთავაზებაზე პერიოდის თარიღები არ ჩანს. ბმული: {details_url}".strip()
+    return "ამ შეთავაზებაზე პერიოდის თარიღები არ ჩანს.".strip()
 
 def _offer_key(offer: Dict[str, Any]) -> str:
     meta = (offer or {}).get("metadata", {}) or {}
@@ -561,6 +626,26 @@ class BOGChatbot:
 
         available_n = len(results)
 
+        # If the user asks about validity dates, answer deterministically from metadata.
+        # This prevents hallucinated start/end dates and stays consistent with the dataset.
+        if _is_date_question(query):
+            tokens = _tokenize(query)
+            is_generic_date_q = len(tokens) <= 4
+            target_offer: Optional[Dict[str, Any]] = None
+
+            if is_generic_date_q and self._last_results:
+                target_offer = self._last_results[0]
+            elif results:
+                target_offer = results[0]
+
+            if target_offer is not None:
+                answer = _format_offer_period_answer(target_offer)
+                self.conversation_history.append({"role": "user", "content": query})
+                self.conversation_history.append({"role": "assistant", "content": answer})
+                self._last_user_query = query
+                self._last_results = list(results) if results else list(self._last_results)
+                return answer
+
         # 2) Taxonomy normalize (attach to metadata for prompt formatting)
         for r in results:
             meta = r.get("metadata", {}) or {}
@@ -739,6 +824,7 @@ class BOGChatbot:
                             return n
 
                 preferred = [
+                    "gemini-3-pro-preview",
                     "gemini-2.0-flash",
                     "gemini-2.0-flash-lite",
                     "gemini-1.5-flash",
@@ -760,12 +846,39 @@ class BOGChatbot:
                 },
             )
 
-            text = getattr(resp, "text", None)
-            if text:
-                return str(text)
+            # google-generativeai's `resp.text` is a "quick accessor" and may raise
+            # when the response contains no valid content parts.
+            try:
+                quick_text = resp.text  # type: ignore[attr-defined]
+            except Exception:
+                quick_text = None
+            if quick_text:
+                return str(quick_text).strip()
 
-            # Fallback for SDK response shapes
-            return str(resp)
+            # More defensive extraction across SDK response shapes.
+            candidates = getattr(resp, "candidates", None) or []
+            extracted_parts: List[str] = []
+            for cand in candidates:
+                content = getattr(cand, "content", None)
+                parts = getattr(content, "parts", None) or []
+                for p in parts:
+                    t = getattr(p, "text", None)
+                    if t:
+                        extracted_parts.append(str(t))
+            if extracted_parts:
+                return "".join(extracted_parts).strip()
+
+            # If we got here, Gemini returned no usable text.
+            finish_reason = None
+            try:
+                if candidates:
+                    finish_reason = getattr(candidates[0], "finish_reason", None)
+            except Exception:
+                finish_reason = None
+            raise RuntimeError(
+                "Gemini-მ ცარიელი პასუხი დააბრუნა (no text parts). "
+                f"finish_reason={finish_reason}. სცადე სხვა LLM_MODEL ან შეამოწმე safety/settings."
+            )
 
         raise ValueError(f"Unsupported provider: {provider}")
 
