@@ -20,75 +20,14 @@ _COUNT_RE = re.compile(r"\b(\d{1,2})\b")
 # Regex for tokenizing Georgian and Latin text (keep consistent with retriever)
 _WORD_RE = re.compile(r"[0-9A-Za-z\u10A0-\u10FF]+", re.UNICODE)
 
-# Very small stopword set (keep conservative)
-_STOPWORDS = {
-    "და",
-    "ან",
-    "რომ",
-    "რა",
-    "როგორ",
-    "სად",
-    "როდის",
-    "ვინ",
-    "ის",
-    "ეს",
-    "იმ",
-    "ამ",
-    "კიდევ",
-    "მაჩვენე",
-    "მაჩვენეთ",
-    "მომეცი",
-    "მომეცით",
-    "მითხარი",
-    "მითხარით",
-    "მითხარი",
-    "მითხარით",
-    "მაჩვენე",
-    "მაჩვენეთ",
-    "please",
-    "show",
-    "tell",
-    "again",
-    "უფრო",
-    "best",
-    "top",
-    "give",
-    "me",
-    "some",
-    "more",
-    "in",
-    "at",
-    "the",
-    "a",
-    "an",
-    "to",
-    "of",
- }
-
-
 _FOLLOW_UP_CUES = (
     # Georgian follow-up
-    "ეს",
-    "ეგ",
-    "იმ",
-    "ამ",
-    "ამაზე",
-    "იმაზე",
-    "ამის",
-    "იმის",
-    "ამის შესახებ",
-    "იმის შესახებ",
-    "წინაზე",
+    "შესახებ",
     "წინა",
-    "ბოლოს",
     "ბოლო",
     "კიდევ",
-    "და კიდევ",
     "დამატებით",
-    "უფრო დეტალურად",
-    "დეტალები",
-    "მეტად",
-    "მითხარი მეტი",
+    "დეტალ",
     "პირველი",
     "მეორე",
     "მესანმე",
@@ -112,35 +51,41 @@ def _truncate(text: str, max_chars: int) -> str:
     return t[: max(0, max_chars - 1)].rstrip() + "…"
 
 
-def _looks_like_follow_up(query: str) -> bool:
+def _looks_like_follow_up(query: str, previous_category: str = "", category_labels: Optional[List[str]] = None) -> bool:
+    """Check if query is referencing previous results.
+    
+    Follow-ups are ONLY queries that reference previously shown offers by ordinal/position:
+    - "პირველი შემოთავაზების დეტალები მინდა" (details of the first offer)
+    - "მეორე რას სთავაზობს?" (what does the second one offer?)
+    - "show me the first one"
+    - "details of #2"
+    
+    All other queries (categories, filters, questions) are treated as NEW independent queries.
+    """
     q = (query or "").strip().lower()
     if not q:
         return False
 
-    # Short / ambiguous questions often refer to the previous turn
-    if len(q) <= 25:
+    # Ordinal references in Georgian
+    georgian_ordinals = [
+        "პირველი", "მეორე", "მესამე", "მეოთხე", "მეხუთე",
+        "უკანასკნელი", "ბოლო"
+    ]
+    
+    # Ordinal references in English
+    english_ordinals = [
+        "first", "second", "third", "fourth", "fifth",
+        "last", "#1", "#2", "#3", "#4", "#5",
+        "number 1", "number 2", "number 3"
+    ]
+    
+    # Check for ordinal references
+    all_ordinals = georgian_ordinals + english_ordinals
+    if any(ordinal in q for ordinal in all_ordinals):
         return True
-
-    # If it contains follow-up cue words
-    for cue in _FOLLOW_UP_CUES:
-        if cue in q:
-            return True
-
-    # Questions that are mostly pronouns / generic
-    generic_starts = (
-        "და",
-        "კიდევ",
-        "მაშ",
-        "ანუ",
-        "ok",
-        "კი",
-        "არა",
-    )
-    if q.startswith(generic_starts):
-        return True
-
+    
+    # NOT a follow-up - treat as independent query
     return False
-
 
 def _offer_key(offer: Dict[str, Any]) -> str:
     meta = (offer or {}).get("metadata", {}) or {}
@@ -210,15 +155,80 @@ def _load_category_labels(repo_root: Path) -> List[str]:
         return []
 
 
-def _extract_category(query: str, category_labels: List[str]) -> str:
+# Semantic mappings: Georgian query words → category_desc value
+_CATEGORY_KEYWORDS = {
+    # გართობა და კულტურა (Entertainment & Culture)
+    "გართობა და კულტურა": [
+        "გართობ", "გავერთბი", "გართობის", "გასართობი",
+        "კულტურ", "დასვენება", "entertainment", "fun", "enjoy"
+    ],
+    # შოპინგი (Shopping)
+    "შოპინგი": [
+        "შოპინგ", "შოფინგ", "shopping", "მაღაზი", "მაღაზიებ",
+        "საყიდლ", "შოპ", "shop",
+        "ტანსაცმელ", "სამოს", "ჩაცმულობ", 
+    ],
+    # კვება (Food)
+    "კვება": [
+        "კვებ", "რესტორან", "კაფე", "საჭმელ", "ჭამ",
+    ],
+    # დასვენება (Relaxation/Vacation)
+    "დასვენება": [
+        "დასვენებ", "დამსვენება", "relax", "spa",
+        "სასტუმრო", "ჰოტელ", "hotel", "accommodation"
+    ],
+    # თავის მოვლა (Self-care/Beauty)
+    "თავის მოვლა": [
+        "თავის მოვლა", "სილამაზე", "სალონ", "beauty", "spa"
+    ],
+    # მოგზაურობა (Travel)
+    "მოგზაურობა": [
+        "მოგზაურობ", "ფრენ", "ავია", "travel", "flight"
+    ],
+    # განათლება (Education)
+    "განათლება": [
+        "განათლებ", "სწავლ", "ტრენინგ", "education", "training", "course"
+    ],
+    # სახლი და ოჯახი (Home & Family)
+    "სახლი და ოჯახი": [
+        "სახლ", "ოჯახ", "home", "family", "household"
+    ],
+    # ავტომობილები (Automobiles)
+    "ავტომობილები": [
+        "ავტომობილ", "მანქან", "car", "auto"
+    ],
+    # ტექნიკა (Technology)
+    "ტექნიკა": [
+        "ტექნიკ", "გაჯეტ", "კომპიუტერ", "tech", "gadget"
+    ]
+}
+
+
+def _extract_all_categories(query: str, category_labels: List[str]) -> List[str]:
+    """Extract ALL categories mentioned in query (for multi-category queries)."""
     q = (query or "").strip().lower()
     if not q or not category_labels:
-        return ""
-    for label in category_labels:
-        lab = label.lower()
-        if lab and lab in q:
-            return label
-    return ""
+        return []
+    
+    detected = []
+    # Find all matching categories using shared keyword mapping
+    for category_label in category_labels:
+        keywords = _CATEGORY_KEYWORDS.get(category_label, [])
+        for kw in keywords:
+            if kw in q:
+                if category_label not in detected:
+                    detected.append(category_label)
+                break
+    
+    # Fallback: substring match on the category label itself
+    if not detected:
+        for label in category_labels:
+            lab = label.lower()
+            if lab and lab in q:
+                if label not in detected:
+                    detected.append(label)
+    
+    return detected
 
 
 def _extract_city(query: str, city_labels: List[str]) -> str:
@@ -240,10 +250,6 @@ def _extract_city(query: str, city_labels: List[str]) -> str:
 
 
 def _parse_requested_count(query: str) -> Optional[int]:
-    """Best-effort parse of "give me N offers".
-
-    We only treat it as a request count if it looks like the number refers to offers/places/options.
-    """
 
     q = (query or "").lower()
     if not q:
@@ -259,17 +265,8 @@ def _parse_requested_count(query: str) -> Optional[int]:
 
     # Only accept if query mentions a collection-like noun.
     triggers = (
-        "offer",
-        "offers",
-        "option",
-        "options",
-        "place",
-        "places",
-        "variant",
-        "variants",
         "შეთავაზ",
         "ვარიანტ",
-        "ადგილი",
         "ადგილ",
     )
     if any(t in q for t in triggers):
@@ -296,8 +293,6 @@ def _extract_topic_keywords(query: str, city: str = "", limit: int = 5) -> List[
 
     for t in tokens:
         if not t or t.isdigit():
-            continue
-        if t in _STOPWORDS:
             continue
         if len(t) <= 2:
             continue
@@ -389,16 +384,6 @@ def _dominant_category_desc(results: List[Dict[str, Any]]) -> str:
 class BOGChatbot:
 
     def __init__(self, retriever, config: Dict[str, Any]) -> None:
-        """Initialize the chatbot.
-        
-        Args:
-            retriever: OfferRetriever instance for fetching offers.
-            config: Configuration dictionary with keys:
-                - provider: LLM provider ('openai', 'gemini', 'none')
-                - model: Model name (e.g., 'gpt-4o-mini')
-                - temperature: Generation temperature (0-1)
-                - history_to_keep: Number of conversation turns to retain
-        """
 
         self.retriever = retriever
         self.config = config
@@ -451,7 +436,10 @@ class BOGChatbot:
         if city_in_query:
             self._last_city = city_in_query
 
-        category_in_query = _extract_category(query, self._category_labels)
+        # Extract ALL categories mentioned in query (multi-category support)
+        all_categories = _extract_all_categories(query, self._category_labels)
+        category_in_query = all_categories[0] if all_categories else ""
+        
         if category_in_query:
             self._last_category_desc = category_in_query
 
@@ -459,96 +447,119 @@ class BOGChatbot:
         if benefit_in_query:
             self._last_benefit_hint = benefit_in_query
 
-        is_follow_up = _looks_like_follow_up(query) and bool(self._last_results)
+        # Follow-up detection: STRICT - only very ambiguous queries are follow-ups
+        is_follow_up = (
+            _looks_like_follow_up(query, previous_category=self._last_category_desc, category_labels=self._category_labels)
+            and bool(self._last_results)
+        )
 
-        # If the user omits a city but previously specified one, carry it forward.
-        carry_city = bool(self._last_city) and not city_in_query
-
-        # Carry benefit/category/topic if user didn't override.
-        carry_benefit = bool(self._last_benefit_hint) and not benefit_in_query
-        # Extract topic keywords; use only the city in the current query to avoid excluding all tokens
-        # when we're carrying a previous city forward.
+        # Extract topic keywords for context
         topic_kw_limit = int(self.config.get("context_topic_keywords_limit", 5))
         topic_keywords = _extract_topic_keywords(query, city=city_in_query, limit=topic_kw_limit)
-        carry_topic = bool(self._last_topic_keywords) and not topic_keywords
-        carry_category = bool(self._last_category_desc) and not category_in_query
 
-        # 1) Retrieve
-        # For follow-ups, expand retrieval query slightly and fall back to last results if needed.
-        retrieval_query = query
-        if is_follow_up and self._last_user_query:
-            retrieval_query = f"{self._last_user_query}\nFollow-up: {query}".strip()
+        # NEW LOGIC: If NOT a follow-up, clear ALL carried context
+        if not is_follow_up:
+            # Fresh query - don't carry anything from previous turns
+            carry_city = False
+            carry_benefit = False
+            carry_category = False
+            carry_topic = False
+        else:
+            # IS a follow-up - only carry context if user didn't specify new values
+            carry_city = bool(self._last_city) and not city_in_query
+            carry_benefit = bool(self._last_benefit_hint) and not benefit_in_query
+            carry_category = bool(self._last_category_desc) and not category_in_query
+            carry_topic = bool(self._last_topic_keywords) and not topic_keywords
 
-        if carry_city:
-            retrieval_query = f"{retrieval_query}\nCity context: {self._last_city}".strip()
+        # 1) Retrieve - MULTI-CATEGORY SUPPORT
+        # If multiple categories detected, make separate retrieval for each
+        results = []
+        
+        if len(all_categories) > 1:
+            # Multi-category query: retrieve for each category separately
+            for cat in all_categories:
+                retrieval_query = query
+                
+                # Build payload filter for this category
+                payload_filter: Dict[str, Any] = {"category_desc": cat}
+                
+                active_city = city_in_query or (self._last_city if (is_follow_up and carry_city) else "")
+                if active_city:
+                    payload_filter["cities"] = active_city
+                
+                active_benefit = benefit_in_query or (self._last_benefit_hint if (is_follow_up and carry_benefit) else "")
+                payload_filter.update(_benefit_payload_constraints(active_benefit))
+                
+                # Retrieve for this category
+                cat_results = self.retriever.retrieve(
+                    retrieval_query,
+                    top_k=3,  # Get top 3 per category
+                    payload_filter=(payload_filter or None),
+                )
+                results.extend(cat_results)
+        else:
+            # Single category or no category - original logic
+            retrieval_query = query
+            if is_follow_up and self._last_user_query:
+                retrieval_query = f"{self._last_user_query}\nFollow-up: {query}".strip()
+            elif is_follow_up:
+                is_follow_up = False
 
-        if category_in_query:
-            retrieval_query = f"{retrieval_query}\nCategory context: {category_in_query}".strip()
-        elif carry_category:
-            retrieval_query = f"{retrieval_query}\nCategory context: {self._last_category_desc}".strip()
+            if carry_city:
+                retrieval_query = f"{retrieval_query}\nCity context: {self._last_city}".strip()
 
-        if carry_benefit:
-            retrieval_query = f"{retrieval_query}\nBenefit context: {self._last_benefit_hint}".strip()
+            if carry_city:
+                retrieval_query = f"{retrieval_query}\nCity context: {self._last_city}".strip()
 
-        if carry_topic:
-            retrieval_query = f"{retrieval_query}\nTopic context: {' '.join(self._last_topic_keywords)}".strip()
+            if category_in_query:
+                retrieval_query = f"{retrieval_query}\nCategory context: {category_in_query}".strip()
+            elif carry_category:
+                retrieval_query = f"{retrieval_query}\nCategory context: {self._last_category_desc}".strip()
 
-        # Build a structured payload filter for Qdrant (category/city/benefit).
-        payload_filter: Dict[str, Any] = {}
-        active_category = category_in_query or (self._last_category_desc if carry_category else "")
-        if active_category:
-            payload_filter["category_desc"] = active_category
+            if carry_benefit:
+                retrieval_query = f"{retrieval_query}\nBenefit context: {self._last_benefit_hint}".strip()
 
-        active_city = city_in_query or (self._last_city if carry_city else "")
-        if active_city:
-            payload_filter["cities"] = active_city
+            if carry_topic:
+                retrieval_query = f"{retrieval_query}\nTopic context: {' '.join(self._last_topic_keywords)}".strip()
 
-        active_benefit = benefit_in_query or (self._last_benefit_hint if carry_benefit else "")
-        payload_filter.update(_benefit_payload_constraints(active_benefit))
+            # Build a structured payload filter for Qdrant (category/city/benefit).
+            payload_filter: Dict[str, Any] = {}
+            active_category = category_in_query or (self._last_category_desc if (is_follow_up and carry_category) else "")
+            if active_category:
+                payload_filter["category_desc"] = active_category
 
-        # If the query is just a category (browse), default to showing more.
-        is_category_browse = bool(category_in_query) and len(_tokenize(query)) <= 4 and requested_n is None
-        if is_category_browse:
-            requested_n = int(self.config.get("category_browse_default_n", 10))
+            active_city = city_in_query or (self._last_city if (is_follow_up and carry_city) else "")
+            if active_city:
+                payload_filter["cities"] = active_city
 
-        # If user requests N offers, pull more candidates and then limit to N.
-        # (Reranking benefits from a bigger candidate pool.)
-        top_k_override: Optional[int] = None
-        limit_override: Optional[int] = None
-        if requested_n is not None:
-            default_top_k = int(getattr(self.retriever, "top_k", 5) or 5)
-            top_k_override = max(default_top_k, min(50, requested_n * 4))
-            limit_override = requested_n
+            active_benefit = benefit_in_query or (self._last_benefit_hint if (is_follow_up and carry_benefit) else "")
+            payload_filter.update(_benefit_payload_constraints(active_benefit))
 
-        # Try with structured constraints first; fall back if too strict.
-        results = self.retriever.retrieve(
-            retrieval_query,
-            top_k=top_k_override,
-            limit=limit_override,
-            payload_filter=(payload_filter or None),
-        )
-        if not results and payload_filter:
-            results = self.retriever.retrieve(retrieval_query, top_k=top_k_override, limit=limit_override)
+            # If the query is just a category (browse), default to showing more.
+            is_category_browse = bool(category_in_query) and len(_tokenize(query)) <= 4 and requested_n is None
+            if is_category_browse:
+                requested_n = int(self.config.get("category_browse_default_n", 10))
 
-        if is_follow_up:
-            # If retrieval returns nothing (common for pronoun-y follow-ups), reuse last offers.
-            if not results:
-                results = list(self._last_results)
-            else:
-                # Merge so we don't unexpectedly switch away from the previous offer set.
-                max_keep = int(self.config.get("followup_offer_limit", 5))
-                results = _merge_offers(preferred=self._last_results, fallback=results, limit=max_keep)
+            # If user requests N offers, pull more candidates and then limit to N.
+            # (Reranking benefits from a bigger candidate pool.)
+            top_k_override: Optional[int] = None
+            limit_override: Optional[int] = None
+            if requested_n is not None:
+                default_top_k = int(getattr(self.retriever, "top_k", 5) or 5)
+                top_k_override = max(default_top_k, min(50, requested_n * 4))
+                limit_override = requested_n
+
+            # Try with structured constraints first; fall back if too strict.
+            results = self.retriever.retrieve(
+                retrieval_query,
+                top_k=top_k_override,
+                limit=limit_override,
+                payload_filter=(payload_filter or None),
+            )
+            if not results and payload_filter:
+                results = self.retriever.retrieve(retrieval_query, top_k=top_k_override, limit=limit_override)
 
         available_n = len(results)
-
-        # Update carried context based on retrieved offers (dominant category) and the user's message.
-        if results:
-            cat = _dominant_category_desc(results)
-            if cat:
-                self._last_category_desc = cat
-
-        if topic_keywords:
-            self._last_topic_keywords = topic_keywords
 
         # 2) Taxonomy normalize (attach to metadata for prompt formatting)
         for r in results:
@@ -566,32 +577,24 @@ class BOGChatbot:
         # 3) Build prompt
         system_prompt = (self.config.get("system_prompt") or PromptTemplates.SYSTEM_PROMPT).strip()
 
-        prev_answer = ""
-        if is_follow_up and self.conversation_history:
-            # last assistant content if available
-            for m in reversed(self.conversation_history):
-                if m.get("role") == "assistant":
-                    prev_answer = str(m.get("content") or "")
-                    break
-
         user_prompt = PromptTemplates.create_user_message(
             query=query,
             offers=results,
-            previous_query=(self._last_user_query if (is_follow_up or carry_city) else None),
-            previous_answer=_truncate(prev_answer, int(self.config.get("followup_prev_answer_max_chars", 900))),
+            previous_query=None,  # No follow-up context
+            previous_answer=None,
             requested_n=requested_n,
             available_n=available_n,
-            carried_city=self._last_city if carry_city else None,
-            carried_category=(active_category or None) if (carry_category or category_in_query) else None,
-            carried_benefit=(active_benefit or None) if (carry_benefit or benefit_in_query) else None,
-            carried_topic=(" ".join(self._last_topic_keywords) if carry_topic else None),
+            carried_city=None,
+            carried_category=None,
+            carried_benefit=None,
+            carried_topic=None,
         )
         messages: List[Dict[str, str]] = [
             {"role": "system", "content": system_prompt},
         ]
 
-        # Optional short conversation memory
-        history_to_keep = int(self.config.get("history_to_keep", 4))
+        # Keep minimal conversation history for LLM context only (not for retrieval)
+        history_to_keep = int(self.config.get("history_to_keep", 2))
         if history_to_keep > 0 and self.conversation_history:
             messages.extend(self.conversation_history[-history_to_keep:])
 

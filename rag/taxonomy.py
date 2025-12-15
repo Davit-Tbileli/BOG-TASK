@@ -11,6 +11,11 @@ This module loads `data/processed/taxonomy.json` and applies:
 
 The result is attached to retrieved offers to help the LLM generate
 consistent Georgian answers.
+
+Note on cities field:
+- If cities contains "საქართველო" (Georgia/nationwide), the offer applies to ALL cities
+- This is handled in vector_store.py filtering logic where city queries match both
+  the specific city AND "საქართველო" offers
 """
 
 from __future__ import annotations

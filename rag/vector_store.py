@@ -185,15 +185,32 @@ class VectorStore:
         logger.info(f"Successfully added {len(documents)} documents to '{self.collection_name}'")
     
     def _build_filter(self, payload_filter: Dict[str, Any]):
-        """Build a Qdrant Filter from a simple equality payload_filter dict."""
+        """Build a Qdrant Filter from a simple equality payload_filter dict.
+        
+        Special handling for 'cities' field:
+        - If querying for a specific city, also match offers with "საქართველო" (nationwide)
+        - "საქართველო" means the offer applies to all cities in Georgia
+        """
 
         from qdrant_client.http import models as qm  # type: ignore
 
-        must: List[qm.FieldCondition] = []
+        must: List[Any] = []  # Can contain FieldCondition or Filter
         for key, value in (payload_filter or {}).items():
             if value is None:
                 continue
-            must.append(qm.FieldCondition(key=str(key), match=qm.MatchValue(value=value)))
+            
+            # Special case: cities field
+            # If user asks for a specific city, match that city OR "საქართველო" (nationwide)
+            if key == "cities" and value:
+                city_filter = qm.Filter(
+                    should=[
+                        qm.FieldCondition(key="cities", match=qm.MatchValue(value=value)),
+                        qm.FieldCondition(key="cities", match=qm.MatchValue(value="საქართველო")),
+                    ]
+                )
+                must.append(city_filter)
+            else:
+                must.append(qm.FieldCondition(key=str(key), match=qm.MatchValue(value=value)))
 
         if not must:
             return None
