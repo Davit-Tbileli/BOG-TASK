@@ -182,15 +182,6 @@ class OfferRetriever:
         results: List[Dict[str, Any]],
         limit_override: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
-        """Rerank results using lexical overlap and query type detection.
-        
-        Args:
-            query: Original user query.
-            results: List of retrieved offer dictionaries.
-            
-        Returns:
-            Reranked and filtered list of offers.
-        """
 
         if not results:
             return []

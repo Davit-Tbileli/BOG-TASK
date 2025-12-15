@@ -1,23 +1,3 @@
-"""Taxonomy-based normalization for offers.
-
-We do NOT index taxonomy in the vector DB.
-Instead we use taxonomy at query-time to:
-- normalize offer benefit type (discount/cashback/points/etc.)
-- extract a numeric value when possible (e.g. 20, unit="%")
-
-This module loads `data/processed/taxonomy.json` and applies:
-1) per-offer overrides (offer_annotations)
-2) rule-based matching (rules, ordered by priority)
-
-The result is attached to retrieved offers to help the LLM generate
-consistent Georgian answers.
-
-Note on cities field:
-- If cities contains "საქართველო" (Georgia/nationwide), the offer applies to ALL cities
-- This is handled in vector_store.py filtering logic where city queries match both
-  the specific city AND "საქართველო" offers
-"""
-
 from __future__ import annotations
 
 import json

@@ -103,11 +103,6 @@ class VectorStore:
         self.ensure_payload_indexes(collection_name=name)
 
     def ensure_payload_indexes(self, collection_name: Optional[str] = None, fields: Optional[Iterable[str]] = None) -> None:
-        """Create Qdrant payload indexes needed for filtering.
-
-        Qdrant requires payload indexes for many filter operations on large collections.
-        This method is safe to call repeatedly.
-        """
 
         from qdrant_client.http import models as qm  # type: ignore
 
