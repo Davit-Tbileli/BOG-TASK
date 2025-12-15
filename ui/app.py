@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -29,7 +30,7 @@ st.set_page_config(
 
 
 @st.cache_resource(show_spinner=False)
-def _get_bot():
+def _get_bot(llm_provider: str, llm_model: str):
 
     _ensure_repo_on_path()
 
@@ -39,6 +40,12 @@ def _get_bot():
         load_dotenv(_repo_root() / ".env")
     except Exception as e:
         logger.warning(f"Could not load .env file: {e}")
+
+    # Apply UI overrides (these are read by build_default_chatbot())
+    if llm_provider:
+        os.environ["LLM_PROVIDER"] = llm_provider
+    if llm_model:
+        os.environ["LLM_MODEL"] = llm_model
 
     from llm.chatbot import build_default_chatbot
     return build_default_chatbot()
@@ -52,11 +59,47 @@ def main() -> None:
     # Sidebar with controls
     with st.sidebar:
         st.header("პარამეტრები")
+
+        gemini_models = [
+            "gemini-3-pro-preview",
+            "gemini-2.0-flash",
+            "gemini-2.0-flash-lite",
+        ]
+
+        # Default from env (if present), else a reasonable default.
+        default_provider = (os.getenv("LLM_PROVIDER") or "gemini").strip().lower()
+        default_model = (os.getenv("LLM_MODEL") or "gemini-2.0-flash").strip()
+        if default_model not in gemini_models:
+            default_model = "gemini-2.0-flash"
+
+        if "llm_provider" not in st.session_state:
+            st.session_state.llm_provider = default_provider
+        if "llm_model" not in st.session_state:
+            st.session_state.llm_model = default_model
+
+        selected_model = st.selectbox(
+            "LLM Model",
+            options=gemini_models,
+            index=gemini_models.index(st.session_state.llm_model),
+            help="აირჩიე Gemini მოდელი, რომლითაც ბოტი უპასუხებს.",
+        )
+
+        if selected_model != st.session_state.llm_model:
+            st.session_state.llm_provider = "gemini"
+            st.session_state.llm_model = selected_model
+            # Reset conversation on model switch to avoid mixed context.
+            st.session_state.messages = []
+            try:
+                bot = _get_bot(st.session_state.llm_provider, st.session_state.llm_model)
+                bot.reset_conversation()
+            except Exception:
+                pass
+            st.rerun()
         
         if st.button("🔄 ახალი საუბარი", help="დაიწყე ახალი საუბარი"):
             st.session_state.messages = []
             try:
-                bot = _get_bot()
+                bot = _get_bot(st.session_state.llm_provider, st.session_state.llm_model)
                 bot.reset_conversation()
             except Exception:
                 pass
@@ -87,7 +130,7 @@ def main() -> None:
 
     with st.chat_message("assistant"):
         try:
-            bot = _get_bot()
+            bot = _get_bot(st.session_state.llm_provider, st.session_state.llm_model)
             with st.spinner("ვეძებ შეთავაზებებს…"):
                 answer = bot.chat(user_text)
             st.markdown(answer)
