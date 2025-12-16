@@ -1,12 +1,3 @@
-"""Offer retrieval with reranking.
-
-Handles:
-- Query processing and embedding generation
-- Vector similarity search through VectorStore
-- Result reranking with lexical boost
-- Factual vs recommendation query detection
-"""
-
 from __future__ import annotations
 
 import logging
@@ -21,28 +12,14 @@ _WORD_RE = re.compile(r"[0-9A-Za-z\u10A0-\u10FF]+", re.UNICODE)
 
 
 def _tokenize(text: str) -> List[str]:
-    """Tokenize text into lowercase words (Georgian and Latin).
-    
-    Args:
-        text: Input text to tokenize.
-        
-    Returns:
-        List of lowercase word tokens.
-    """
+
     if not text:
         return []
     return [t.lower() for t in _WORD_RE.findall(text)]
 
 
 def _is_recommendation_query(query: str) -> bool:
-    """Check if query is asking for recommendations/suggestions.
-    
-    Args:
-        query: User query string.
-        
-    Returns:
-        True if query appears to be a recommendation request.
-    """
+
     q = (query or "").lower()
     # Very small heuristic: if user explicitly asks for recommendations/offers, don't force single-offer answers.
     keywords = [
@@ -59,14 +36,7 @@ def _is_recommendation_query(query: str) -> bool:
 
 
 def _is_factual_question(query: str) -> bool:
-    """Check if query is a factual question (who/what/when/where).
-    
-    Args:
-        query: User query string.
-        
-    Returns:
-        True if query appears to be a factual question.
-    """
+
     q = (query or "").strip().lower()
     if not q:
         return False
@@ -91,18 +61,6 @@ def _is_factual_question(query: str) -> bool:
 
 
 class OfferRetriever:
-    """Retrieves and ranks relevant offers based on user queries.
-    
-    Combines vector similarity search with lexical boosting and
-    query-type-aware result filtering.
-    
-    Attributes:
-        embedding_generator: Generator for query embeddings.
-        vector_store: Vector store for similarity search.
-        top_k: Number of results to retrieve from vector store.
-        min_similarity_score: Minimum score threshold for results.
-        lexical_boost: Weight for lexical overlap boost (0-1).
-    """
 
     def __init__(
         self, 
@@ -110,19 +68,6 @@ class OfferRetriever:
         vector_store, 
         config: Dict[str, Any]
     ) -> None:
-        """Initialize the retriever.
-        
-        Args:
-            embedding_generator: EmbeddingGenerator instance.
-            vector_store: VectorStore instance.
-            config: Configuration dictionary with keys:
-                - top_k_results: Number of results to retrieve (default: 5)
-                - min_similarity_score: Minimum score threshold (default: 0.0)
-                - lexical_boost: Lexical overlap weight (default: 0.15)
-                - max_results_for_prompt: Max results for recommendations (default: top_k)
-                - max_factual_results: Max results for factual questions (default: 1)
-                - min_factual_overlap: Min lexical overlap for factual queries (default: 0.10)
-        """
 
         self.embedding_generator = embedding_generator
         self.vector_store = vector_store
@@ -143,14 +88,7 @@ class OfferRetriever:
         limit: Optional[int] = None,
         payload_filter: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
-        """Retrieve relevant offers for a query.
-        
-        Args:
-            query: User query string.
-            
-        Returns:
-            List of ranked offer dictionaries with score and metadata.
-        """
+
         if not query or not query.strip():
             logger.warning("Empty query provided to retriever")
             return []

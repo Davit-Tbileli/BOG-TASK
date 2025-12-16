@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import os
 import json
 import re
@@ -12,43 +11,17 @@ from dotenv import load_dotenv
 from llm.prompts import PromptTemplates
 from rag.taxonomy import TaxonomyEngine
 
-logger = logging.getLogger(__name__)
-
-
 _COUNT_RE = re.compile(r"\b(\d{1,2})\b")
 
 # Regex for tokenizing Georgian and Latin text (keep consistent with retriever)
 _WORD_RE = re.compile(r"[0-9A-Za-z\u10A0-\u10FF]+", re.UNICODE)
-
-_FOLLOW_UP_CUES = (
-    # Georgian follow-up
-    "შესახებ",
-    "წინა",
-    "ბოლო",
-    "კიდევ",
-    "დამატებით",
-    "დეტალ",
-    "პირველი",
-    "მეორე",
-    "მესანმე",
-    # English follow-up cues (just in case)
-    "that",
-    "this",
-    "those",
-    "it",
-    "what about",
-    "tell me more",
-    "more details",
-)
 
 
 _DATE_QUESTION_CUES = (
     # Georgian
     "როდემდე",
     "სადამდე",
-    "ვადამდე",
     "როდიდან",
-    "საიდან",
     "პერიოდი",
     "თარიღ",
     "დაწყება",
@@ -67,50 +40,35 @@ _DATE_QUESTION_CUES = (
 )
 
 
-def _truncate(text: str, max_chars: int) -> str:
-    t = (text or "").strip()
-    if max_chars <= 0:
-        return ""
-    if len(t) <= max_chars:
-        return t
-    return t[: max(0, max_chars - 1)].rstrip() + "…"
+def _looks_like_follow_up(query: str) -> bool:
 
-
-def _looks_like_follow_up(query: str, previous_category: str = "", category_labels: Optional[List[str]] = None) -> bool:
-    """Check if query is referencing previous results.
-    
-    Follow-ups are ONLY queries that reference previously shown offers by ordinal/position:
-    - "პირველი შემოთავაზების დეტალები მინდა" (details of the first offer)
-    - "მეორე რას სთავაზობს?" (what does the second one offer?)
-    - "show me the first one"
-    - "details of #2"
-    
-    All other queries (categories, filters, questions) are treated as NEW independent queries.
-    """
     q = (query or "").strip().lower()
     if not q:
         return False
 
-    # Ordinal references in Georgian
-    georgian_ordinals = [
-        "პირველი", "მეორე", "მესამე", "მეოთხე", "მეხუთე",
-        "უკანასკნელი", "ბოლო"
-    ]
-    
-    # Ordinal references in English
-    english_ordinals = [
-        "first", "second", "third", "fourth", "fifth",
-        "last", "#1", "#2", "#3", "#4", "#5",
-        "number 1", "number 2", "number 3"
-    ]
-    
-    # Check for ordinal references
-    all_ordinals = georgian_ordinals + english_ordinals
-    if any(ordinal in q for ordinal in all_ordinals):
+    # Short date questions like "როდემდეა?" should be treated as follow-ups.
+    if _is_date_question(q) and len(_tokenize(q)) <= 4:
         return True
-    
-    # NOT a follow-up - treat as independent query
-    return False
+
+    cues = (
+        "ეს",
+        "ამ",
+        "იმ",
+        "შესახებ",
+        "წინა",
+        "კიდევ",
+        "დამატებით",
+        "დეტალ",
+        "მეტი",
+        "უფრო",
+        "that",
+        "this",
+        "it",
+        "what about",
+        "tell me more",
+        "more details",
+    )
+    return any(c in q for c in cues)
 
 
 def _is_date_question(query: str) -> bool:
@@ -152,36 +110,8 @@ def _format_offer_period_answer(offer: Dict[str, Any]) -> str:
         return f"ამ შეთავაზებაზე პერიოდის თარიღები არ ჩანს. ბმული: {details_url}".strip()
     return "ამ შეთავაზებაზე პერიოდის თარიღები არ ჩანს.".strip()
 
-def _offer_key(offer: Dict[str, Any]) -> str:
-    meta = (offer or {}).get("metadata", {}) or {}
-    return str(meta.get("details_url") or meta.get("id") or "")
-
-
-def _merge_offers(preferred: List[Dict[str, Any]], fallback: List[Dict[str, Any]], limit: int) -> List[Dict[str, Any]]:
-    seen: set[str] = set()
-    out: List[Dict[str, Any]] = []
-    for src in (preferred, fallback):
-        for o in src or []:
-            k = _offer_key(o)
-            if not k:
-                # If no stable key, just append and hope it's unique enough
-                out.append(o)
-                continue
-            if k in seen:
-                continue
-            seen.add(k)
-            out.append(o)
-            if len(out) >= limit:
-                return out
-    return out[:limit]
-
 
 def _load_city_labels(repo_root: Path) -> List[str]:
-    """Load city labels from data/raw/cities.json.
-
-    Returns a list of city labels as stored in the dataset (Georgian labels).
-    If file is missing or unreadable, returns empty list.
-    """
 
     cities_path = repo_root / "data" / "raw" / "cities.json"
     try:
@@ -222,50 +152,16 @@ def _load_category_labels(repo_root: Path) -> List[str]:
 
 # Semantic mappings: Georgian query words → category_desc value
 _CATEGORY_KEYWORDS = {
-    # გართობა და კულტურა (Entertainment & Culture)
-    "გართობა და კულტურა": [
-        "გართობ", "გავერთბი", "გართობის", "გასართობი",
-        "კულტურ", "დასვენება", "entertainment", "fun", "enjoy"
-    ],
-    # შოპინგი (Shopping)
-    "შოპინგი": [
-        "შოპინგ", "შოფინგ", "shopping", "მაღაზი", "მაღაზიებ",
-        "საყიდლ", "შოპ", "shop",
-        "ტანსაცმელ", "სამოს", "ჩაცმულობ", 
-    ],
-    # კვება (Food)
-    "კვება": [
-        "კვებ", "რესტორან", "კაფე", "საჭმელ", "ჭამ",
-    ],
-    # დასვენება (Relaxation/Vacation)
-    "დასვენება": [
-        "დასვენებ", "დამსვენება", "relax", "spa",
-        "სასტუმრო", "ჰოტელ", "hotel", "accommodation"
-    ],
-    # თავის მოვლა (Self-care/Beauty)
-    "თავის მოვლა": [
-        "თავის მოვლა", "სილამაზე", "სალონ", "beauty", "spa"
-    ],
-    # მოგზაურობა (Travel)
-    "მოგზაურობა": [
-        "მოგზაურობ", "ფრენ", "ავია", "travel", "flight"
-    ],
-    # განათლება (Education)
-    "განათლება": [
-        "განათლებ", "სწავლ", "ტრენინგ", "education", "training", "course"
-    ],
-    # სახლი და ოჯახი (Home & Family)
-    "სახლი და ოჯახი": [
-        "სახლ", "ოჯახ", "home", "family", "household"
-    ],
-    # ავტომობილები (Automobiles)
-    "ავტომობილები": [
-        "ავტომობილ", "მანქან", "car", "auto"
-    ],
-    # ტექნიკა (Technology)
-    "ტექნიკა": [
-        "ტექნიკ", "გაჯეტ", "კომპიუტერ", "tech", "gadget"
-    ]
+    "გართობა და კულტურა": ["გართობ", "კულტურ", "entertainment"],
+    "შოპინგი": ["შოპინგ", "shopping", "მაღაზი"],
+    "კვება": ["კვებ", "რესტორან", "კაფე"],
+    "დასვენება": ["დასვენებ", "relax", "spa", "სასტუმრო", "ჰოტელ", "hotel"],
+    "თავის მოვლა": ["თავის მოვლა", "სილამაზე", "beauty"],
+    "მოგზაურობა": ["მოგზაურობ", "travel"],
+    "განათლება": ["განათლებ", "education"],
+    "სახლი და ოჯახი": ["სახლ", "ოჯახ", "home"],
+    "ავტომობილები": ["ავტომობილ", "მანქან", "car"],
+    "ტექნიკა": ["ტექნიკ", "tech"],
 }
 
 
@@ -345,34 +241,6 @@ def _tokenize(text: str) -> List[str]:
     return [t.lower() for t in _WORD_RE.findall(text)]
 
 
-def _extract_topic_keywords(query: str, city: str = "", limit: int = 5) -> List[str]:
-    """Extract a few stable keywords to carry context across turns."""
-    q = (query or "").strip().lower()
-    if not q:
-        return []
-
-    tokens = _tokenize(q)
-    out: List[str] = []
-    city_l = (city or "").strip().lower()
-    city_stem = city_l[:-1] if city_l.endswith("ი") else city_l
-
-    for t in tokens:
-        if not t or t.isdigit():
-            continue
-        if len(t) <= 2:
-            continue
-        if city_l and city_l in t:
-            continue
-        if city_stem and city_stem in t:
-            continue
-        if t not in out:
-            out.append(t)
-        if len(out) >= limit:
-            break
-
-    return out
-
-
 def _extract_benefit_hint(query: str) -> str:
     q = (query or "").strip().lower()
     if not q:
@@ -394,15 +262,13 @@ def _extract_benefit_hint(query: str) -> str:
 
 
 def _benefit_payload_constraints(benefit_hint: str) -> Dict[str, Any]:
-    """Map a benefit hint to raw payload constraints (as stored in Qdrant payload)."""
-
     hint = (benefit_hint or "").strip().upper()
     if hint == "CASHBACK_PERCENT":
-        return {"benef_name": "CASHBACK", "benef_badge": "%"}
+        return {"benef_name": "CASHBACK"}
     if hint == "DISCOUNT_PERCENT":
-        return {"benef_name": "DISCOUNT", "benef_badge": "%"}
+        return {"benef_name": "DISCOUNT"}
     if hint == "POINTS_MULTIPLIER":
-        return {"benef_name": "MR", "benef_badge": "X"}
+        return {"benef_name": "MR"}
     return {}
 
 
@@ -434,18 +300,6 @@ def _format_category_list(categories: List[str]) -> str:
     return "\n".join(lines)
 
 
-def _dominant_category_desc(results: List[Dict[str, Any]]) -> str:
-    counts: Dict[str, int] = {}
-    for r in results or []:
-        meta = (r or {}).get("metadata", {}) or {}
-        cat = str(meta.get("category_desc") or "").strip()
-        if not cat:
-            continue
-        counts[cat] = counts.get(cat, 0) + 1
-    if not counts:
-        return ""
-    return max(counts.items(), key=lambda kv: kv[1])[0]
-
 class BOGChatbot:
 
     def __init__(self, retriever, config: Dict[str, Any]) -> None:
@@ -460,12 +314,11 @@ class BOGChatbot:
         # Keep last retrieval results so follow-ups like “ეს რა პირობებია?” stay on-topic.
         self._last_results: List[Dict[str, Any]] = []
         self._last_user_query: str = ""
+        self._last_selected_offer: Optional[Dict[str, Any]] = None
+        self._last_assistant_response: str = ""
 
         # Lightweight context: remember the last explicit city.
         self._last_city: str = ""
-
-        # Additional context carry-over
-        self._last_topic_keywords: List[str] = []
         self._last_benefit_hint: str = ""
         self._last_category_desc: str = ""
 
@@ -512,15 +365,46 @@ class BOGChatbot:
         if benefit_in_query:
             self._last_benefit_hint = benefit_in_query
 
-        # Follow-up detection: STRICT - only very ambiguous queries are follow-ups
-        is_follow_up = (
-            _looks_like_follow_up(query, previous_category=self._last_category_desc, category_labels=self._category_labels)
-            and bool(self._last_results)
-        )
+        has_context = bool(self._last_results)
+        is_follow_up = has_context and _looks_like_follow_up(query)
 
-        # Extract topic keywords for context
-        topic_kw_limit = int(self.config.get("context_topic_keywords_limit", 5))
-        topic_keywords = _extract_topic_keywords(query, city=city_in_query, limit=topic_kw_limit)
+        # If user asks about validity dates, answer deterministically from last context.
+        if _is_date_question(query) and has_context:
+            ql = query.lower()
+            target_offer: Optional[Dict[str, Any]] = None
+            
+            # First, try to match brand/title from the query itself
+            for r in self._last_results:
+                meta = (r or {}).get("metadata", {}) or {}
+                brand = str(meta.get("brand_name") or "").strip().lower()
+                title = str(meta.get("title") or "").strip().lower()
+                if (brand and brand in ql) or (title and title in ql):
+                    target_offer = r
+                    break
+            
+            # If no match in query, extract from last assistant response
+            if target_offer is None and self._last_assistant_response:
+                last_resp_lower = self._last_assistant_response.lower()
+                for r in self._last_results:
+                    meta = (r or {}).get("metadata", {}) or {}
+                    brand = str(meta.get("brand_name") or "").strip().lower()
+                    title = str(meta.get("title") or "").strip().lower()
+                    if (brand and brand in last_resp_lower) or (title and title in last_resp_lower):
+                        target_offer = r
+                        break
+            
+            # Final fallback
+            if target_offer is None:
+                target_offer = self._last_selected_offer or self._last_results[0]
+            
+            if target_offer is not None:
+                answer = _format_offer_period_answer(target_offer)
+                self.conversation_history.append({"role": "user", "content": query})
+                self.conversation_history.append({"role": "assistant", "content": answer})
+                self._last_user_query = query
+                self._last_selected_offer = target_offer
+                self._last_assistant_response = answer
+                return answer
 
         # NEW LOGIC: If NOT a follow-up, clear ALL carried context
         if not is_follow_up:
@@ -528,123 +412,71 @@ class BOGChatbot:
             carry_city = False
             carry_benefit = False
             carry_category = False
-            carry_topic = False
         else:
             # IS a follow-up - only carry context if user didn't specify new values
             carry_city = bool(self._last_city) and not city_in_query
             carry_benefit = bool(self._last_benefit_hint) and not benefit_in_query
             carry_category = bool(self._last_category_desc) and not category_in_query
-            carry_topic = bool(self._last_topic_keywords) and not topic_keywords
 
-        # 1) Retrieve - MULTI-CATEGORY SUPPORT
-        # If multiple categories detected, make separate retrieval for each
+        # 1) Retrieve
         results = []
-        
-        if len(all_categories) > 1:
-            # Multi-category query: retrieve for each category separately
-            for cat in all_categories:
-                retrieval_query = query
-                
-                # Build payload filter for this category
-                payload_filter: Dict[str, Any] = {"category_desc": cat}
-                
-                active_city = city_in_query or (self._last_city if (is_follow_up and carry_city) else "")
-                if active_city:
-                    payload_filter["cities"] = active_city
-                
-                active_benefit = benefit_in_query or (self._last_benefit_hint if (is_follow_up and carry_benefit) else "")
-                payload_filter.update(_benefit_payload_constraints(active_benefit))
-                
-                # Retrieve for this category
-                cat_results = self.retriever.retrieve(
-                    retrieval_query,
-                    top_k=3,  # Get top 3 per category
-                    payload_filter=(payload_filter or None),
-                )
-                results.extend(cat_results)
-        else:
-            # Single category or no category - original logic
-            retrieval_query = query
-            if is_follow_up and self._last_user_query:
-                retrieval_query = f"{self._last_user_query}\nFollow-up: {query}".strip()
-            elif is_follow_up:
-                is_follow_up = False
+        retrieval_query = query
+        if is_follow_up and self._last_user_query:
+            retrieval_query = f"{self._last_user_query}\nFollow-up: {query}".strip()
 
-            if carry_city:
-                retrieval_query = f"{retrieval_query}\nCity context: {self._last_city}".strip()
+        if carry_city:
+            retrieval_query = f"{retrieval_query}\nCity context: {self._last_city}".strip()
 
-            if carry_city:
-                retrieval_query = f"{retrieval_query}\nCity context: {self._last_city}".strip()
+        if category_in_query:
+            retrieval_query = f"{retrieval_query}\nCategory context: {category_in_query}".strip()
+        elif carry_category:
+            retrieval_query = f"{retrieval_query}\nCategory context: {self._last_category_desc}".strip()
 
-            if category_in_query:
-                retrieval_query = f"{retrieval_query}\nCategory context: {category_in_query}".strip()
-            elif carry_category:
-                retrieval_query = f"{retrieval_query}\nCategory context: {self._last_category_desc}".strip()
+        if carry_benefit:
+            retrieval_query = f"{retrieval_query}\nBenefit context: {self._last_benefit_hint}".strip()
 
-            if carry_benefit:
-                retrieval_query = f"{retrieval_query}\nBenefit context: {self._last_benefit_hint}".strip()
+        # Build a structured payload filter for Qdrant (category/city/benefit).
+        payload_filter: Dict[str, Any] = {}
+        active_category = category_in_query or (self._last_category_desc if (is_follow_up and carry_category) else "")
+        if active_category:
+            payload_filter["category_desc"] = active_category
 
-            if carry_topic:
-                retrieval_query = f"{retrieval_query}\nTopic context: {' '.join(self._last_topic_keywords)}".strip()
+        active_city = city_in_query or (self._last_city if (is_follow_up and carry_city) else "")
+        if active_city:
+            payload_filter["cities"] = active_city
 
-            # Build a structured payload filter for Qdrant (category/city/benefit).
-            payload_filter: Dict[str, Any] = {}
-            active_category = category_in_query or (self._last_category_desc if (is_follow_up and carry_category) else "")
-            if active_category:
-                payload_filter["category_desc"] = active_category
+        active_benefit = benefit_in_query or (self._last_benefit_hint if (is_follow_up and carry_benefit) else "")
+        payload_filter.update(_benefit_payload_constraints(active_benefit))
 
-            active_city = city_in_query or (self._last_city if (is_follow_up and carry_city) else "")
-            if active_city:
-                payload_filter["cities"] = active_city
+        # If user requests N offers, pull more candidates and then limit to N.
+        top_k_override: Optional[int] = None
+        limit_override: Optional[int] = None
+        if requested_n is not None:
+            default_top_k = int(getattr(self.retriever, "top_k", 5) or 5)
+            top_k_override = max(default_top_k, min(50, requested_n * 4))
+            limit_override = requested_n
 
-            active_benefit = benefit_in_query or (self._last_benefit_hint if (is_follow_up and carry_benefit) else "")
-            payload_filter.update(_benefit_payload_constraints(active_benefit))
-
-            # If the query is just a category (browse), default to showing more.
-            is_category_browse = bool(category_in_query) and len(_tokenize(query)) <= 4 and requested_n is None
-            if is_category_browse:
-                requested_n = int(self.config.get("category_browse_default_n", 10))
-
-            # If user requests N offers, pull more candidates and then limit to N.
-            # (Reranking benefits from a bigger candidate pool.)
-            top_k_override: Optional[int] = None
-            limit_override: Optional[int] = None
-            if requested_n is not None:
-                default_top_k = int(getattr(self.retriever, "top_k", 5) or 5)
-                top_k_override = max(default_top_k, min(50, requested_n * 4))
-                limit_override = requested_n
-
-            # Try with structured constraints first; fall back if too strict.
-            results = self.retriever.retrieve(
-                retrieval_query,
-                top_k=top_k_override,
-                limit=limit_override,
-                payload_filter=(payload_filter or None),
-            )
-            if not results and payload_filter:
-                results = self.retriever.retrieve(retrieval_query, top_k=top_k_override, limit=limit_override)
+        # Try with structured constraints first; fall back if too strict.
+        results = self.retriever.retrieve(
+            retrieval_query,
+            top_k=top_k_override,
+            limit=limit_override,
+            payload_filter=(payload_filter or None),
+        )
+        if not results and payload_filter:
+            results = self.retriever.retrieve(retrieval_query, top_k=top_k_override, limit=limit_override)
 
         available_n = len(results)
 
-        # If the user asks about validity dates, answer deterministically from metadata.
-        # This prevents hallucinated start/end dates and stays consistent with the dataset.
-        if _is_date_question(query):
-            tokens = _tokenize(query)
-            is_generic_date_q = len(tokens) <= 4
-            target_offer: Optional[Dict[str, Any]] = None
-
-            if is_generic_date_q and self._last_results:
-                target_offer = self._last_results[0]
-            elif results:
-                target_offer = results[0]
-
-            if target_offer is not None:
-                answer = _format_offer_period_answer(target_offer)
-                self.conversation_history.append({"role": "user", "content": query})
-                self.conversation_history.append({"role": "assistant", "content": answer})
-                self._last_user_query = query
-                self._last_results = list(results) if results else list(self._last_results)
-                return answer
+        # If the user asks about validity dates and we had to retrieve, answer from retrieved metadata.
+        if _is_date_question(query) and results:
+            answer = _format_offer_period_answer(results[0])
+            self.conversation_history.append({"role": "user", "content": query})
+            self.conversation_history.append({"role": "assistant", "content": answer})
+            self._last_user_query = query
+            self._last_results = list(results)
+            self._last_selected_offer = results[0]
+            return answer
 
         # 2) Taxonomy normalize (attach to metadata for prompt formatting)
         for r in results:
@@ -665,8 +497,8 @@ class BOGChatbot:
         user_prompt = PromptTemplates.create_user_message(
             query=query,
             offers=results,
-            previous_query=None,  # No follow-up context
-            previous_answer=None,
+            previous_query=self._last_user_query if is_follow_up else None,
+            previous_answer=self._last_assistant_response if is_follow_up else None,
             requested_n=requested_n,
             available_n=available_n,
             carried_city=None,
@@ -699,6 +531,7 @@ class BOGChatbot:
             self.conversation_history.append({"role": "assistant", "content": answer})
             self._last_user_query = query
             self._last_results = list(results)
+            self._last_assistant_response = answer
             return answer
 
         # 4) If no API key, fall back to deterministic formatted output.
@@ -713,6 +546,7 @@ class BOGChatbot:
             self.conversation_history.append({"role": "assistant", "content": answer})
             self._last_user_query = query
             self._last_results = list(results)
+            self._last_assistant_response = answer
             return answer
 
         if provider == "gemini" and not os.getenv("GEMINI_API_KEY"):
@@ -726,6 +560,7 @@ class BOGChatbot:
             self.conversation_history.append({"role": "assistant", "content": answer})
             self._last_user_query = query
             self._last_results = list(results)
+            self._last_assistant_response = answer
             return answer
 
         answer = self._call_llm(messages, provider=provider, model=model)
@@ -737,23 +572,12 @@ class BOGChatbot:
         # Update follow-up context after producing a response.
         self._last_user_query = query
         self._last_results = list(results)
+        self._last_selected_offer = results[0] if results else self._last_selected_offer
+        self._last_assistant_response = answer
         if city_in_query:
             self._last_city = city_in_query
 
         return answer
-    
-    def reset_conversation(self) -> None:
-        """Clear the conversation history.
-        
-        Use this to start a fresh conversation without context from previous exchanges.
-        """
-        self.conversation_history = []
-        self._last_results = []
-        self._last_user_query = ""
-        self._last_city = ""
-        self._last_topic_keywords = []
-        self._last_benefit_hint = ""
-        self._last_category_desc = ""
     
     def _call_llm(self, messages: List[Dict[str, str]], provider: str, model: str) -> str:
 
@@ -827,8 +651,6 @@ class BOGChatbot:
                     "gemini-3-pro-preview",
                     "gemini-2.0-flash",
                     "gemini-2.0-flash-lite",
-                    "gemini-1.5-flash",
-                    "gemini-1.5-pro",
                 ]
                 for p in preferred:
                     for n in available:

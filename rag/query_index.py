@@ -1,11 +1,3 @@
-"""Query the Qdrant vector index for testing.
-
-A smoke test script to verify the RAG pipeline is working correctly.
-
-Usage:
-    python -m rag.query_index "your query here"
-"""
-
 from __future__ import annotations
 
 import logging

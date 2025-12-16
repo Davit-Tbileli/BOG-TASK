@@ -1,9 +1,4 @@
 from __future__ import annotations
-
-# NOTE: Keep this module import-light.
-# Importing llm.chatbot here breaks `python -m llm.chatbot` with a runtime warning
-# because the module gets loaded before execution.
-
 from typing import Any
 
 __all__ = ["BOGChatbot", "build_default_chatbot", "PromptTemplates"]

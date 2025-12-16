@@ -24,17 +24,6 @@ def _ensure_serializable_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
 class VectorStore:
 
     def __init__(self, config: Dict[str, Any]) -> None:
-        """Initialize the vector store.
-        
-        Args:
-            config: Configuration dictionary with keys:
-                - qdrant_url: URL to Qdrant instance (required)
-                - qdrant_api_key: API key for Qdrant Cloud (optional)
-                - collection_name: Name for the collection (default: 'bog_offers')
-                - qdrant_distance: Distance metric (default: 'COSINE')
-                - qdrant_timeout_seconds: Request timeout (default: 120)
-                - upsert_batch_size: Batch size for upserting (default: 64)
-        """
 
         self.config = config
         self.vector_store_type = config.get('vector_store', 'qdrant')
@@ -136,17 +125,7 @@ class VectorStore:
         embeddings: List[List[float]], 
         metadata: List[Dict[str, Any]]
     ) -> None:
-        """Add documents with their embeddings and metadata to the collection.
-        
-        Args:
-            documents: List of document texts.
-            embeddings: List of embedding vectors.
-            metadata: List of metadata dictionaries for each document.
-            
-        Raises:
-            ValueError: If lengths of documents, embeddings, and metadata don't match.
-        """
-
+  
         if not documents:
             return
         if not (len(documents) == len(embeddings) == len(metadata)):
@@ -180,12 +159,6 @@ class VectorStore:
         logger.info(f"Successfully added {len(documents)} documents to '{self.collection_name}'")
     
     def _build_filter(self, payload_filter: Dict[str, Any]):
-        """Build a Qdrant Filter from a simple equality payload_filter dict.
-        
-        Special handling for 'cities' field:
-        - If querying for a specific city, also match offers with "საქართველო" (nationwide)
-        - "საქართველო" means the offer applies to all cities in Georgia
-        """
 
         from qdrant_client.http import models as qm  # type: ignore
 
@@ -224,15 +197,6 @@ class VectorStore:
         top_k: int = 5,
         payload_filter: Optional[Dict[str, Any]] = None,
     ) -> List[Tuple[Dict[str, Any], float]]:
-        """Search for similar documents using vector similarity.
-        
-        Args:
-            query_embedding: The query embedding vector.
-            top_k: Number of top results to return.
-            
-        Returns:
-            List of (payload_dict, score) tuples sorted by similarity.
-        """
     
         if self._vector_size is None:
             self._vector_size = len(query_embedding)

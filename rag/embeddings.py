@@ -1,11 +1,3 @@
-"""Embedding generation for offers data.
-
-Handles:
-- Loading multilingual embedding models (BAAI/bge-m3 by default)
-- Generating embeddings for offers
-- Preprocessing text for embeddings with Georgian language support
-"""
-
 from __future__ import annotations
 
 import logging
@@ -15,14 +7,7 @@ logger = logging.getLogger(__name__)
 
 
 def _safe_str(v: Any) -> str:
-    """Safely convert any value to a string.
-    
-    Args:
-        v: Any value to convert (can be None, list, tuple, or other).
-        
-    Returns:
-        A cleaned string representation.
-    """
+
     if v is None:
         return ""
     if isinstance(v, (list, tuple)):
@@ -34,16 +19,6 @@ class EmbeddingGenerator:
 
     def __init__(self, model_name: str, normalize_embeddings: bool = True, device: str | None = None):
 
-        """Initialize the embedding generator.
-        
-        Args:
-            model_name: Name of the sentence-transformer model to use.
-            normalize_embeddings: Whether to L2-normalize embeddings (recommended for cosine similarity).
-            device: Device to run the model on ('cpu', 'cuda', etc.). Auto-detected if None.
-            
-        Raises:
-            ImportError: If sentence-transformers is not installed.
-        """
         self.model_name = model_name
         self.normalize_embeddings = normalize_embeddings
 
@@ -63,14 +38,7 @@ class EmbeddingGenerator:
         self.model = SentenceTransformer(model_name, device=device)
         
     def generate_embeddings(self, texts: List[str]) -> List[List[float]]:
-        """Generate embeddings for a list of texts.
-        
-        Args:
-            texts: List of text strings to embed.
-            
-        Returns:
-            List of embedding vectors (as lists of floats).
-        """
+
         if not texts:
             return []
 
@@ -84,17 +52,7 @@ class EmbeddingGenerator:
         return embeddings.tolist()
     
     def preprocess_offer(self, offer: Dict[str, Any]) -> str:
-        """Preprocess an offer dictionary into a text representation for embedding.
-        
-        Creates a dense, multilingual-friendly representation with Georgian field labels.
-        Keeps Georgian text as-is since the model (bge-m3) supports it natively.
-        
-        Args:
-            offer: Dictionary containing offer data fields.
-            
-        Returns:
-            A formatted text string suitable for embedding.
-        """
+
         brand = _safe_str(offer.get("brand_name"))
         category = _safe_str(offer.get("category_desc"))
         title = _safe_str(offer.get("title"))
@@ -123,9 +81,5 @@ class EmbeddingGenerator:
         return "\n".join([p for p in parts if p])
 
     def embedding_dimension(self) -> int:
-        """Get the dimension of the embedding vectors produced by the model.
-        
-        Returns:
-            The size of embedding vectors (e.g., 1024 for bge-m3).
-        """
+    #The size of embedding vectors (e.g., 1024 for bge-m3).
         return int(self.model.get_sentence_embedding_dimension())
