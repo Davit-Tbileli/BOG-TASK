@@ -229,28 +229,65 @@ Output:
 - prompt შეიცავს ინსტრუქციას, რომ თუ კითხვა გაგრძელებაა („ეს“, „ამის შესახებ“, „კიდევ“),
   უნდა გამოიყენოს იგივე კონტექსტი და არ „გადახტეს“ სხვა შეთავაზებებზე.
 
-6.2 llm/chatbot.py
+6.2 llm/query_parser.py
+-----------------------
+როლი: მომხმარებლის query-ის ანალიზი და პარსინგი
+
+ფუნქციები:
+- _looks_like_follow_up(): გაგრძელების დეტექცია (პრონაუნები, date questions)
+- _is_date_question(): თარიღის/პერიოდის კითხვების ამოცნობა
+- _is_category_list_query(): „რა კატეგორიებია?" ტიპის კითხვები
+- _extract_city(): ქალაქის ამოცნობა query-დან (inflection-aware)
+- _extract_all_categories(): კატეგორიების ამოცნობა (_CATEGORY_KEYWORDS mapping-ით)
+- _parse_requested_count(): რაოდენობის პარსინგი („5 შეთავაზება")
+- _extract_benefit_hint(): სარგებლის ტიპის hint (cashback/discount/points)
+- _benefit_payload_constraints(): Qdrant payload filter generation
+- _tokenize(): ქართული+ლათინური ტოკენიზაცია
+
+6.3 llm/helpers.py
+------------------
+როლი: დამხმარე ფუნქციები data loading და formatting
+
+ფუნქციები:
+- _load_city_labels(): data/raw/cities.json → ქალაქების სია
+- _load_category_labels(): data/processed/found_offers.json → კატეგორიების სია
+- _format_offer_period_answer(): თარიღის კითხვაზე დეტერმინისტული პასუხი
+- _format_category_list(): კატეგორიების სიის ფორმატირება
+
+6.4 llm/chatbot.py
 ------------------
 კლასი: BOGChatbot
 
 როლი:
 - provider/model არჩევა (.env/config)
+- query parsing (query_parser.py-დან)
 - retrieval pipeline გაშვება
 - taxonomy normalization შედეგებზე
 - prompt assembly (system + short history + user prompt)
 - LLM call (OpenAI ან Gemini), ან fallback retrieval-only output
 
 Follow-up behavior (ძალიან პრაქტიკული ნაწილი):
-- ბოტი ინახავს ბოლო retrieval results-ს
-- თუ ახალი კითხვა მოკლე/პრონაუნიანი გაგრძელებაა, შეუძლია:
+- ბოტი ინახავს ბოლო retrieval results-ს (_last_results)
+- ბოლო მომხმარებლის query-ს (_last_user_query)
+- ბოლო assistant-ის პასუხს (_last_assistant_response)
+- კონტექსტის carry-over: _last_city, _last_category_desc, _last_benefit_hint
+- თუ ახალი კითხვა follow-up-ია:
   - retrieval query ცოტათი გააფართოვოს წინა query-ით
-  - თუ retrieval ვერ პოულობს შედეგებს, გამოიყენოს წინა offers
-  - ან merge გააკეთოს, რომ კონტექსტი არ დაიკარგოს
+  - გადაწყვიტოს რა კონტექსტი უნდა carry-over (carry_city, carry_benefit, carry_category)
+  - თუ არა follow-up, კონტექსტი იხსნება (fresh query)
+
+Deterministic responses:
+- თარიღის კითხვები → პირდაპირ metadata-დან პასუხი
+- კატეგორიების სია → ჩამონათვალი
+- Missing API keys → fallback formatted output
 
 CLI:
 - One-shot: python -m llm.chatbot "..."
 - Interactive: python -m llm.chatbot
 - No-LLM: python -m llm.chatbot --no-llm "..."
+
+Factory function:
+- build_default_chatbot(): .env-დან სრული კონფიგურაცია + wiring
 
 ================================================================================
 7) UI (ui/)

@@ -1,303 +1,28 @@
 from __future__ import annotations
 
 import os
-import json
-import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 
 from llm.prompts import PromptTemplates
-from rag.taxonomy import TaxonomyEngine
-
-_COUNT_RE = re.compile(r"\b(\d{1,2})\b")
-
-# Regex for tokenizing Georgian and Latin text (keep consistent with retriever)
-_WORD_RE = re.compile(r"[0-9A-Za-z\u10A0-\u10FF]+", re.UNICODE)
-
-
-_DATE_QUESTION_CUES = (
-    # Georgian
-    "როდემდე",
-    "სადამდე",
-    "როდიდან",
-    "პერიოდი",
-    "თარიღ",
-    "დაწყება",
-    "დასრულება",
-    "მოქმედებს",
-    # English
-    "until",
-    "till",
-    "valid",
-    "expires",
-    "expiration",
-    "end date",
-    "start date",
-    "from when",
-    "when does",
+from llm.query_parser import (
+    _looks_like_follow_up,
+    _is_category_list_query,
+    _extract_all_categories,
+    _extract_city,
+    _parse_requested_count,
+    _extract_benefit_hint,
+    _benefit_payload_constraints,
+    _extract_ordinal_position,
 )
-
-
-def _looks_like_follow_up(query: str) -> bool:
-
-    q = (query or "").strip().lower()
-    if not q:
-        return False
-
-    # Short date questions like "როდემდეა?" should be treated as follow-ups.
-    if _is_date_question(q) and len(_tokenize(q)) <= 4:
-        return True
-
-    cues = (
-        "ეს",
-        "ამ",
-        "იმ",
-        "შესახებ",
-        "წინა",
-        "კიდევ",
-        "დამატებით",
-        "დეტალ",
-        "მეტი",
-        "უფრო",
-        "that",
-        "this",
-        "it",
-        "what about",
-        "tell me more",
-        "more details",
-    )
-    return any(c in q for c in cues)
-
-
-def _is_date_question(query: str) -> bool:
-    q = (query or "").strip().lower()
-    if not q:
-        return False
-    return any(cue in q for cue in _DATE_QUESTION_CUES)
-
-
-def _format_offer_period_answer(offer: Dict[str, Any]) -> str:
-    meta = (offer or {}).get("metadata", {}) or {}
-    start_date = str(meta.get("start_date") or "").strip()
-    end_date = str(meta.get("end_date") or "").strip()
-    details_url = str(meta.get("details_url") or "").strip()
-
-    brand = str(meta.get("brand_name") or "").strip()
-    title = str(meta.get("title") or "").strip()
-
-    label = ""
-    if brand and title:
-        label = f"{brand} — {title}"
-    elif title:
-        label = title
-    elif brand:
-        label = brand
-
-    if start_date or end_date:
-        # Always return both start/end if we have them.
-        period = f"{start_date} - {end_date}".strip(" -")
-        head = f"პერიოდი: {period}" if period else ""
-        if label:
-            head = f"{label}\n{head}" if head else label
-        if details_url:
-            head = f"{head}\nბმული: {details_url}" if head else f"ბმული: {details_url}"
-        return head.strip()
-
-    # No dates available in data.
-    if details_url:
-        return f"ამ შეთავაზებაზე პერიოდის თარიღები არ ჩანს. ბმული: {details_url}".strip()
-    return "ამ შეთავაზებაზე პერიოდის თარიღები არ ჩანს.".strip()
-
-
-def _load_city_labels(repo_root: Path) -> List[str]:
-
-    cities_path = repo_root / "data" / "raw" / "cities.json"
-    try:
-        with cities_path.open("r", encoding="utf-8") as f:
-            data = json.load(f)
-        labels: List[str] = []
-        for item in data or []:
-            if isinstance(item, dict):
-                label = str(item.get("label") or "").strip()
-                if label:
-                    labels.append(label)
-        # Prefer longer labels first to avoid partial matches.
-        labels.sort(key=len, reverse=True)
-        return labels
-    except Exception:
-        return []
-
-
-def _load_category_labels(repo_root: Path) -> List[str]:
-    """Load distinct category_desc values from data/processed/found_offers.json."""
-
-    offers_path = repo_root / "data" / "processed" / "found_offers.json"
-    try:
-        with offers_path.open("r", encoding="utf-8") as f:
-            data = json.load(f)
-        cats: set[str] = set()
-        for offer in data or []:
-            if not isinstance(offer, dict):
-                continue
-            c = str(offer.get("category_desc") or "").strip()
-            if c:
-                cats.add(c)
-        out = sorted(cats, key=len, reverse=True)
-        return out
-    except Exception:
-        return []
-
-
-# Semantic mappings: Georgian query words → category_desc value
-_CATEGORY_KEYWORDS = {
-    "გართობა და კულტურა": ["გართობ", "კულტურ", "entertainment"],
-    "შოპინგი": ["შოპინგ", "shopping", "მაღაზი"],
-    "კვება": ["კვებ", "რესტორან", "კაფე"],
-    "დასვენება": ["დასვენებ", "relax", "spa", "სასტუმრო", "ჰოტელ", "hotel"],
-    "თავის მოვლა": ["თავის მოვლა", "სილამაზე", "beauty"],
-    "მოგზაურობა": ["მოგზაურობ", "travel"],
-    "განათლება": ["განათლებ", "education"],
-    "სახლი და ოჯახი": ["სახლ", "ოჯახ", "home"],
-    "ავტომობილები": ["ავტომობილ", "მანქან", "car"],
-    "ტექნიკა": ["ტექნიკ", "tech"],
-}
-
-
-def _extract_all_categories(query: str, category_labels: List[str]) -> List[str]:
-    """Extract ALL categories mentioned in query (for multi-category queries)."""
-    q = (query or "").strip().lower()
-    if not q or not category_labels:
-        return []
-    
-    detected = []
-    # Find all matching categories using shared keyword mapping
-    for category_label in category_labels:
-        keywords = _CATEGORY_KEYWORDS.get(category_label, [])
-        for kw in keywords:
-            if kw in q:
-                if category_label not in detected:
-                    detected.append(category_label)
-                break
-    
-    # Fallback: substring match on the category label itself
-    if not detected:
-        for label in category_labels:
-            lab = label.lower()
-            if lab and lab in q:
-                if label not in detected:
-                    detected.append(label)
-    
-    return detected
-
-
-def _extract_city(query: str, city_labels: List[str]) -> str:
-    q = (query or "").strip().lower()
-    if not q or not city_labels:
-        return ""
-
-    for label in city_labels:
-        lab = label.lower()
-        if lab and lab in q:
-            return label
-
-        # Georgian city labels often end with "ი" but user text may be inflected (e.g., "თბილისში").
-        if lab.endswith("ი"):
-            stem = lab[:-1]
-            if stem and stem in q:
-                return label
-    return ""
-
-
-def _parse_requested_count(query: str) -> Optional[int]:
-
-    q = (query or "").lower()
-    if not q:
-        return None
-
-    m = _COUNT_RE.search(q)
-    if not m:
-        return None
-
-    n = int(m.group(1))
-    if n <= 0:
-        return None
-
-    # Only accept if query mentions a collection-like noun.
-    triggers = (
-        "შეთავაზ",
-        "ვარიანტ",
-        "ადგილ",
-    )
-    if any(t in q for t in triggers):
-        return max(1, min(20, n))
-    return None
-
-
-def _tokenize(text: str) -> List[str]:
-    if not text:
-        return []
-    return [t.lower() for t in _WORD_RE.findall(text)]
-
-
-def _extract_benefit_hint(query: str) -> str:
-    q = (query or "").strip().lower()
-    if not q:
-        return ""
-
-    # If user explicitly mentions cashback.
-    if "ქეშბექ" in q or "cashback" in q:
-        return "CASHBACK_PERCENT"
-
-    # Points / MR multipliers.
-    if "ქულ" in q or "mr" in q or "points" in q or "point" in q:
-        return "POINTS_MULTIPLIER"
-
-    # Discount.
-    if "ფასდაკ" in q or "discount" in q or "%" in q:
-        return "DISCOUNT_PERCENT"
-
-    return ""
-
-
-def _benefit_payload_constraints(benefit_hint: str) -> Dict[str, Any]:
-    hint = (benefit_hint or "").strip().upper()
-    if hint == "CASHBACK_PERCENT":
-        return {"benef_name": "CASHBACK"}
-    if hint == "DISCOUNT_PERCENT":
-        return {"benef_name": "DISCOUNT"}
-    if hint == "POINTS_MULTIPLIER":
-        return {"benef_name": "MR"}
-    return {}
-
-
-def _is_category_list_query(query: str) -> bool:
-    q = (query or "").strip().lower()
-    if not q:
-        return False
-    if "კატეგორი" not in q:
-        return False
-    triggers = (
-        "რა",
-        "რომელი",
-        "გაქვს",
-        "არსებ",
-        "ჩამომითვალ",
-        "სია",
-        "list",
-        "categories",
-    )
-    return any(t in q for t in triggers)
-
-
-def _format_category_list(categories: List[str]) -> str:
-    cats = [c.strip() for c in (categories or []) if str(c).strip()]
-    if not cats:
-        return "კატეგორიების სია ვერ მოიძებნა. (data/processed/found_offers.json შეამოწმე)"
-    lines = ["კატეგორიები:"]
-    lines.extend([f"- {c}" for c in cats])
-    return "\n".join(lines)
+from llm.helpers import (
+    _load_city_labels,
+    _load_category_labels,
+    _format_category_list,
+)
+from rag.taxonomy import TaxonomyEngine
 
 
 class BOGChatbot:
@@ -311,13 +36,12 @@ class BOGChatbot:
         self.temperature = config.get('temperature', 0.7)
         self.conversation_history = []
 
-        # Keep last retrieval results so follow-ups like “ეს რა პირობებია?” stay on-topic.
+        # Keep last retrieval results and context for follow-ups
         self._last_results: List[Dict[str, Any]] = []
         self._last_user_query: str = ""
-        self._last_selected_offer: Optional[Dict[str, Any]] = None
         self._last_assistant_response: str = ""
 
-        # Lightweight context: remember the last explicit city.
+        # Lightweight context: remember the last explicit city/category/benefit
         self._last_city: str = ""
         self._last_benefit_hint: str = ""
         self._last_category_desc: str = ""
@@ -354,13 +78,6 @@ class BOGChatbot:
         if city_in_query:
             self._last_city = city_in_query
 
-        # Extract ALL categories mentioned in query (multi-category support)
-        all_categories = _extract_all_categories(query, self._category_labels)
-        category_in_query = all_categories[0] if all_categories else ""
-        
-        if category_in_query:
-            self._last_category_desc = category_in_query
-
         benefit_in_query = _extract_benefit_hint(query)
         if benefit_in_query:
             self._last_benefit_hint = benefit_in_query
@@ -368,43 +85,28 @@ class BOGChatbot:
         has_context = bool(self._last_results)
         is_follow_up = has_context and _looks_like_follow_up(query)
 
-        # If user asks about validity dates, answer deterministically from last context.
-        if _is_date_question(query) and has_context:
-            ql = query.lower()
-            target_offer: Optional[Dict[str, Any]] = None
-            
-            # First, try to match brand/title from the query itself
-            for r in self._last_results:
-                meta = (r or {}).get("metadata", {}) or {}
-                brand = str(meta.get("brand_name") or "").strip().lower()
-                title = str(meta.get("title") or "").strip().lower()
-                if (brand and brand in ql) or (title and title in ql):
-                    target_offer = r
-                    break
-            
-            # If no match in query, extract from last assistant response
-            if target_offer is None and self._last_assistant_response:
-                last_resp_lower = self._last_assistant_response.lower()
-                for r in self._last_results:
-                    meta = (r or {}).get("metadata", {}) or {}
-                    brand = str(meta.get("brand_name") or "").strip().lower()
-                    title = str(meta.get("title") or "").strip().lower()
-                    if (brand and brand in last_resp_lower) or (title and title in last_resp_lower):
-                        target_offer = r
-                        break
-            
-            # Final fallback
-            if target_offer is None:
-                target_offer = self._last_selected_offer or self._last_results[0]
-            
-            if target_offer is not None:
-                answer = _format_offer_period_answer(target_offer)
-                self.conversation_history.append({"role": "user", "content": query})
-                self.conversation_history.append({"role": "assistant", "content": answer})
-                self._last_user_query = query
-                self._last_selected_offer = target_offer
-                self._last_assistant_response = answer
-                return answer
+        # Extract ALL categories mentioned in query (multi-category support)
+        all_categories = _extract_all_categories(query, self._category_labels)
+        
+        # Multi-category handling: if 2+ categories, do separate retrieval for each
+        if len(all_categories) >= 2 and not is_follow_up:
+            return self._handle_multi_category_query(
+                query=query,
+                categories=all_categories,
+                city=city_in_query,
+                benefit_hint=benefit_in_query,
+                requested_n=requested_n,
+                provider=provider,
+                model=model
+            )
+        
+        category_in_query = all_categories[0] if all_categories else ""
+        
+        if category_in_query:
+            self._last_category_desc = category_in_query
+
+        # Check for ordinal reference (e.g., "პირველი როდემდეა", "მეორეზე მეტი დეტალი")
+        has_ordinal = _extract_ordinal_position(query) is not None if has_context else False
 
         # NEW LOGIC: If NOT a follow-up, clear ALL carried context
         if not is_follow_up:
@@ -421,7 +123,11 @@ class BOGChatbot:
         # 1) Retrieve
         results = []
         retrieval_query = query
-        if is_follow_up and self._last_user_query:
+        
+        # For ordinal follow-ups, use last assistant response as context
+        if is_follow_up and has_ordinal and self._last_assistant_response:
+            retrieval_query = f"{self._last_assistant_response}\n\nUser question: {query}".strip()
+        elif is_follow_up and self._last_user_query:
             retrieval_query = f"{self._last_user_query}\nFollow-up: {query}".strip()
 
         if carry_city:
@@ -467,16 +173,6 @@ class BOGChatbot:
             results = self.retriever.retrieve(retrieval_query, top_k=top_k_override, limit=limit_override)
 
         available_n = len(results)
-
-        # If the user asks about validity dates and we had to retrieve, answer from retrieved metadata.
-        if _is_date_question(query) and results:
-            answer = _format_offer_period_answer(results[0])
-            self.conversation_history.append({"role": "user", "content": query})
-            self.conversation_history.append({"role": "assistant", "content": answer})
-            self._last_user_query = query
-            self._last_results = list(results)
-            self._last_selected_offer = results[0]
-            return answer
 
         # 2) Taxonomy normalize (attach to metadata for prompt formatting)
         for r in results:
@@ -572,11 +268,116 @@ class BOGChatbot:
         # Update follow-up context after producing a response.
         self._last_user_query = query
         self._last_results = list(results)
-        self._last_selected_offer = results[0] if results else self._last_selected_offer
         self._last_assistant_response = answer
         if city_in_query:
             self._last_city = city_in_query
 
+        return answer
+    
+    def _handle_multi_category_query(
+        self,
+        query: str,
+        categories: List[str],
+        city: str,
+        benefit_hint: str,
+        requested_n: Optional[int],
+        provider: str,
+        model: str,
+    ) -> str:
+        """Handle queries with multiple categories by doing separate retrievals."""
+        
+        category_results = {}
+        
+        for category in categories:
+            # Build payload filter for this category
+            payload_filter: Dict[str, Any] = {"category_desc": category}
+            if city:
+                payload_filter["cities"] = city
+            if benefit_hint:
+                payload_filter.update(_benefit_payload_constraints(benefit_hint))
+            
+            # Retrieve for this category
+            top_k = int(getattr(self.retriever, "top_k", 5) or 5)
+            if requested_n:
+                top_k = max(top_k, min(50, requested_n * 2))
+            
+            results = self.retriever.retrieve(
+                query,
+                top_k=top_k,
+                limit=requested_n,
+                payload_filter=payload_filter,
+            )
+            
+            if not results and payload_filter:
+                # Retry without filter
+                results = self.retriever.retrieve(query, top_k=top_k, limit=requested_n)
+            
+            if results:
+                # Taxonomy normalize
+                for r in results:
+                    meta = r.get("metadata", {}) or {}
+                    normalized = self.taxonomy.normalize_offer(meta)
+                    if normalized:
+                        meta["benefit_type_id"] = normalized.benefit_type_id
+                        meta["benefit_label_ka"] = normalized.benefit_label_ka
+                        meta["benefit_value"] = normalized.value
+                        meta["benefit_unit"] = normalized.value_unit
+                        meta["benefit_rule_id"] = normalized.rule_id
+                        r["metadata"] = meta
+                
+                category_results[category] = results
+        
+        # If no results for any category, fall back to single retrieval
+        if not category_results:
+            return "სამწუხაროდ, ამ კატეგორიებზე შეთავაზებები ვერ მოიძებნა."
+        
+        # Build combined prompt with category-grouped results
+        system_prompt = (self.config.get("system_prompt") or PromptTemplates.SYSTEM_PROMPT).strip()
+        
+        # Format results by category
+        formatted_sections = []
+        all_results_combined = []
+        
+        for category, results in category_results.items():
+            formatted_sections.append(f"\n=== {category} ===\n")
+            formatted_sections.append(PromptTemplates.format_offers(results))
+            all_results_combined.extend(results)
+        
+        combined_evidence = "\n".join(formatted_sections)
+        
+        user_prompt = f"""User query: {query}
+
+Retrieved offers grouped by category:
+{combined_evidence}
+
+Instructions:
+- Present results grouped by category (e.g., "სასტუმროები:", "შოპინგი:")
+- For each category, list relevant offers
+- If a category has no results, mention it briefly
+- Keep responses natural and conversational in Georgian"""
+        
+        messages: List[Dict[str, str]] = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+        
+        # Call LLM or fallback
+        if provider in {"none", "off", "false"}:
+            answer = f"Multi-category results (LLM off):\n{combined_evidence}"
+        elif provider == "openai" and not os.getenv("OPENAI_API_KEY"):
+            answer = f"OpenAI API key missing.\n{combined_evidence}"
+        elif provider == "gemini" and not os.getenv("GEMINI_API_KEY"):
+            answer = f"Gemini API key missing.\n{combined_evidence}"
+        else:
+            answer = self._call_llm(messages, provider=provider, model=model)
+        
+        # Save state
+        self.conversation_history.append({"role": "user", "content": query})
+        self.conversation_history.append({"role": "assistant", "content": answer})
+        self._last_user_query = query
+        self._last_results = all_results_combined
+        self._last_assistant_response = answer
+        
         return answer
     
     def _call_llm(self, messages: List[Dict[str, str]], provider: str, model: str) -> str:
